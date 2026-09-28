@@ -26,3 +26,13 @@ test('admin edits existing menu without changing its id', async () => {
 test('menu images must belong to approved media storage', async () => {
   const { res, calls } = await run('admin', 'menu-save', { ...menu, image_url: 'https://example.com/image.jpg' }); assert.equal(res.statusCode, 400); assert.equal(calls.length, 1);
 });
+test('admin cannot save unknown or empty preparation choices', async () => {
+  for (const preparations of [[], ['unknown']]) { const { res, calls } = await run('admin', 'menu-save', { ...menu, preparations }); assert.equal(res.statusCode, 400); assert.equal(calls.length, 1); }
+});
+test('orders send the selected preparation to the atomic database function', async () => {
+  const { res, calls } = await run('member', 'order', { menuId: 'drip-existing', preparation: 'iced', serviceDay: '2026-11-07' });
+  assert.equal(res.statusCode, 200); assert.match(calls.at(-1).url, /rpc\/place_kathin_drink_choice$/); assert.equal(JSON.parse(calls.at(-1).options.body).p_preparation, 'iced');
+});
+test('orders reject missing preparation before consuming a right', async () => {
+  const { res, calls } = await run('member', 'order', { menuId: 'drip-existing', serviceDay: '2026-11-07' }); assert.equal(res.statusCode, 400); assert.equal(calls.length, 1);
+});

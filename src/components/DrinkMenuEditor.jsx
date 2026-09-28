@@ -21,7 +21,7 @@ async function prepareImage(file) {
 }
 
 export default function DrinkMenuEditor({ item, onSaved, onCancel }) {
-  const [form, setForm] = useState({ name_th: '', name_en: '', description: '', category: 'drip', image_url: '', sort_order: 100, active: true, ...item });
+  const [form, setForm] = useState({ name_th: '', name_en: '', description: '', category: 'drip', image_url: '', sort_order: 100, active: true, ...item, preparations: item?.preparations || (item?.category === 'blended' ? ['blended'] : ['hot']) });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const fileRef = useRef(null);
@@ -34,9 +34,9 @@ export default function DrinkMenuEditor({ item, onSaved, onCancel }) {
     finally { setBusy(''); if (fileRef.current) fileRef.current.value = ''; }
   };
   const save = async (event) => {
-    event.preventDefault(); setBusy('save'); setError('');
+    event.preventDefault(); if (!form.preparations.length) { setError('เลือกอย่างน้อยหนึ่งรูปแบบ: ร้อน เย็น หรือปั่น'); return; } setBusy('save'); setError('');
     try { await request('menu-save', { ...form, menuId: item?.id || '', sort_order: Number(form.sort_order) }); await onSaved(); }
-    catch (e) { setError(/description|image_url|schema cache/.test(e.message) ? 'กรุณารัน SQL เพิ่มรายละเอียดและรูปเมนูก่อน แล้วบันทึกอีกครั้ง' : e.message); }
+    catch (e) { setError(/description|image_url|preparations|schema cache/.test(e.message) ? 'กรุณารัน SQL เพิ่มรายละเอียดและรูปเมนูก่อน แล้วบันทึกอีกครั้ง' : e.message); }
     finally { setBusy(''); }
   };
   return <form className="drink-editor" onSubmit={save}>
@@ -55,6 +55,7 @@ export default function DrinkMenuEditor({ item, onSaved, onCancel }) {
           <label>ชื่อเมนูภาษาอังกฤษ<input maxLength={100} value={form.name_en} onChange={(e) => update('name_en', e.target.value)} /></label>
           <label>รายละเอียด<textarea rows={3} maxLength={500} placeholder="เช่น กาแฟดริปหอมละมุน ไม่เติมน้ำตาล" value={form.description || ''} onChange={(e) => update('description', e.target.value)} /></label>
           <label>ประเภท<select value={form.category} onChange={(e) => update('category', e.target.value)}><option value="drip">ดริป / ชง</option><option value="blended">ปั่น</option></select></label>
+          <div><strong>รูปแบบที่ให้เลือก *</strong>{[['hot', 'ร้อน'], ['iced', 'เย็น'], ['blended', 'ปั่น']].map(([value, label]) => <label className="drink-checkbox" key={value}><input type="checkbox" checked={form.preparations.includes(value)} onChange={(e) => update('preparations', e.target.checked ? [...form.preparations, value] : form.preparations.filter((p) => p !== value))} />{label}</label>)}</div>
           <label>ลำดับแสดง<input type="number" required min="0" max="9999" value={form.sort_order} onChange={(e) => update('sort_order', e.target.value)} /></label>
           <label className="drink-checkbox"><input type="checkbox" checked={form.active} onChange={(e) => update('active', e.target.checked)} /> เปิดให้สมาชิกสั่งเมนูนี้</label>
         </div>

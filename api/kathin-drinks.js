@@ -96,7 +96,7 @@ export default async function handler(req, res) {
       const today = day === '2026-11-08' ? day : '2026-11-07';
       const [rights, orders, sent] = await Promise.all([
         lookup(base, key, 'kathin_drink_rights', `event_key=eq.${EVENT}&member_id=eq.${encodeURIComponent(actorId)}&select=id,source,created_at&order=id.asc`),
-        lookup(base, key, 'kathin_drink_orders', `event_key=eq.${EVENT}&${action === 'staff' ? '' : `member_id=eq.${encodeURIComponent(actorId)}&`}select=id,member_id,right_id,menu_id,service_day,queue_number,status,created_at,accepted_at,sent_at,created_by&order=service_day.asc,queue_seq.asc`),
+        lookup(base, key, 'kathin_drink_orders', `event_key=eq.${EVENT}&${action === 'staff' ? '' : `member_id=eq.${encodeURIComponent(actorId)}&`}select=*&order=service_day.asc,queue_seq.asc`),
         lookup(base, key, 'kathin_drink_orders', `event_key=eq.${EVENT}&service_day=eq.${today}&status=eq.sent&select=queue_number&order=queue_seq.desc&limit=1`)
       ]);
       const memberOrders = (orders || []).filter((o) => o.member_id === actorId);
@@ -131,14 +131,15 @@ export default async function handler(req, res) {
       const category = String(body.category || '');
       const imageUrl = String(body.image_url || '').trim();
       const existingId = String(body.menuId || '');
-      if (!name || name.length > 100 || !['drip', 'blended'].includes(category)
+      const preparations = body.preparations || (category === 'blended' ? ['blended'] : ['hot']);
+      if (!Array.isArray(preparations) || !preparations.length || preparations.length > 3 || preparations.some((p) => !['hot', 'iced', 'blended'].includes(p)) || !name || name.length > 100 || !['drip', 'blended'].includes(category)
           || (existingId && !/^[\w-]{1,80}$/.test(existingId))
           || (imageUrl && !/^https:\/\/media\.nathoeng\.com\/uploads\/temple\/[0-9]{4}\/[0-9]{2}\/[a-f0-9]{32}\.webp$/.test(imageUrl))
           || !Number.isInteger(Number(body.sort_order)) || Number(body.sort_order) < 0 || Number(body.sort_order) > 9999
           || typeof body.active !== 'boolean') return send(res, 400, { success: false, message: 'กรุณาตรวจชื่อ ประเภท รูปภาพ และลำดับเมนู' });
       const item = { name_th: name, name_en: String(body.name_en || name).trim().slice(0, 100),
         description: String(body.description || '').trim().slice(0, 500), category, image_url: imageUrl || null,
-        active: body.active, sort_order: Number(body.sort_order) };
+        active: body.active, sort_order: Number(body.sort_order), preparations: [...new Set(preparations)] };
       if (existingId) {
         const found = await lookup(base, key, 'kathin_drink_menu', `id=eq.${encodeURIComponent(existingId)}&select=id`);
         if (!found?.length) return send(res, 404, { success: false, message: 'ไม่พบเมนูที่ต้องการแก้ไข' });
@@ -152,8 +153,9 @@ export default async function handler(req, res) {
     if (action === 'order') {
       if (!/^(drip|blend)-/.test(String(body.menuId || ''))) return send(res, 400, { success: false, message: 'กรุณาเลือกเมนู' });
       const day = String(body.serviceDay || '');
-      const result = await rest(base, key, 'rpc/place_kathin_drink_order', '', {
-        method: 'POST', body: JSON.stringify({ p_actor_id: actorId, p_member_id: String(body.memberId || actorId), p_menu_id: String(body.menuId), p_service_day: day })
+      if (!['hot', 'iced', 'blended'].includes(body.preparation)) return send(res, 400, { success: false, message: 'กรุณาเลือก ร้อน เย็น หรือปั่น' });
+      const result = await rest(base, key, 'rpc/place_kathin_drink_choice', '', {
+        method: 'POST', body: JSON.stringify({ p_actor_id: actorId, p_member_id: String(body.memberId || actorId), p_menu_id: String(body.menuId), p_service_day: day, p_preparation: body.preparation })
       });
       return send(res, 200, { success: true, order: result });
     }
@@ -191,7 +193,7 @@ export default async function handler(req, res) {
     return send(res, 400, { success: false, message: 'ไม่รู้จักคำสั่งนี้' });
   } catch (error) {
     const message = String(error?.message || 'ดำเนินการไม่สำเร็จ');
-    const status = /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /INVALID_MENU|INVALID_SERVICE_DAY/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
+    const status = /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /INVALID_MENU|INVALID_SERVICE_DAY|INVALID_PREPARATION/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
     return send(res, status, { success: false, message: ({ NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'เปิดรับคิวในวันที่ 7–8 พฤศจิกายน 2569', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้' })[message] || message });
   }
 }
