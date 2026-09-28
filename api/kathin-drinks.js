@@ -32,7 +32,7 @@ export default async function handler(req, res) {
   if (!base || !key) return send(res, 500, { success: false, message: 'ระบบฐานข้อมูลยังตั้งค่าไม่ครบ' });
   if (req.method === 'POST' && req.body?.action === 'session-exchange') {
     const token = String(req.body?.token || '');
-    const secret = process.env.SESSION_SECRET;
+    const secret = process.env.KATHIN_BRIDGE_SECRET;
     if (!secret || token.length > 4000) return send(res, 401, { success: false, message: 'ไม่สามารถยืนยันบัญชีสมาชิกได้' });
     const parts = token.split('.');
     if (parts.length !== 2 || !parts[0] || !parts[1]) return send(res, 401, { success: false, message: 'โทเคนไม่ถูกต้อง' });
