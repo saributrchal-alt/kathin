@@ -12,7 +12,10 @@ async function read(response) {
   try { return JSON.parse(raw); } catch { return raw; }
 }
 function send(res, status, body) { res.status(status).json(body); }
-function url(base, table, query = '') { return `${base}/rest/v1/${table}${query ? `?${query}` : ''}`; }
+function url(base, table, query = '') {
+  const origin = String(base).trim().replace(/\/+$/, '').replace(/\/rest\/v1$/i, '');
+  return `${origin}/rest/v1/${table}${query ? `?${query}` : ''}`;
+}
 async function rest(base, key, table, query, options = {}) {
   const response = await fetch(url(base, table, query), {
     ...options, headers: headers(key, options.headers), cache: 'no-store'
