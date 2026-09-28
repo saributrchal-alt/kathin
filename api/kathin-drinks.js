@@ -18,7 +18,12 @@ async function rest(base, key, table, query, options = {}) {
     ...options, headers: headers(key, options.headers), cache: 'no-store'
   });
   const data = await read(response);
-  if (!response.ok) throw new Error(typeof data === 'object' ? data?.message || data?.hint || 'Database request failed' : String(data));
+  if (!response.ok) {
+    const error = new Error(typeof data === 'object' ? data?.message || data?.hint || 'Database request failed' : String(data));
+    error.dbStatus = response.status;
+    error.dbCode = typeof data?.code === 'string' ? data.code.slice(0, 20) : '';
+    throw error;
+  }
   return data;
 }
 async function lookup(base, key, table, query) { return rest(base, key, table, query); }
@@ -50,7 +55,10 @@ export default async function handler(req, res) {
       return send(res, 200, { success: true });
     } catch (error) {
       console.error('Kathin session exchange:', error);
-      return send(res, 503, { success: false, message: 'เชื่อมบัญชีสมาชิกไม่สำเร็จ' });
+      const detail = error.dbStatus
+        ? `ฐานข้อมูลตอบ HTTP ${error.dbStatus}${error.dbCode ? ` (${error.dbCode})` : ''}`
+        : 'ติดต่อฐานข้อมูลไม่ได้';
+      return send(res, 503, { success: false, message: `เชื่อมบัญชีสมาชิกไม่สำเร็จ: ${detail}` });
     }
   }
   const session = getSessionFromRequest(req);
