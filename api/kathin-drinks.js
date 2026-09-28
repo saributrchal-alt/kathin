@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { uploadPublicImage } from '../lib/_media-upload.js';
 import { createSessionToken, getSessionFromRequest, setSessionCookie } from '../lib/_auth.js';
 
 const EVENT = 'kathin-2569';
@@ -85,7 +86,7 @@ export default async function handler(req, res) {
       }
       const [eventRows, menu] = await Promise.all([
         lookup(base, key, 'kathin_drink_event', `event_key=eq.${EVENT}&select=event_key,is_open,starts_on,ends_on`),
-        lookup(base, key, 'kathin_drink_menu', 'select=id,name_th,name_en,category,active,sort_order&order=sort_order.asc')
+        lookup(base, key, 'kathin_drink_menu', 'select=*&order=sort_order.asc,id.asc')
       ]);
       const event = eventRows?.[0] || { event_key: EVENT, is_open: false };
       const bangkokToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
@@ -116,6 +117,38 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
     const action = String(body.action || '');
+    if (action === 'menu-image') {
+      if (!admin) return send(res, 403, { success: false, message: 'เฉพาะ Admin จัดการรูปเมนูได้' });
+      const raw = String(body.image || '');
+      const match = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(raw);
+      if (!match || raw.length > 2900000) return send(res, 400, { success: false, message: 'กรุณาเลือกรูป JPEG, PNG หรือ WebP ขนาดไม่เกิน 2 MB' });
+      const uploaded = await uploadPublicImage({ bytes: Buffer.from(match[2], 'base64'), mime: match[1], project: 'temple' });
+      return send(res, 200, { success: true, imageUrl: uploaded.url });
+    }
+    if (action === 'menu-save') {
+      if (!admin) return send(res, 403, { success: false, message: 'เฉพาะ Admin จัดการเมนูได้' });
+      const name = String(body.name_th || '').trim();
+      const category = String(body.category || '');
+      const imageUrl = String(body.image_url || '').trim();
+      const existingId = String(body.menuId || '');
+      if (!name || name.length > 100 || !['drip', 'blended'].includes(category)
+          || (existingId && !/^[\w-]{1,80}$/.test(existingId))
+          || (imageUrl && !/^https:\/\/media\.nathoeng\.com\/uploads\/temple\/[0-9]{4}\/[0-9]{2}\/[a-f0-9]{32}\.webp$/.test(imageUrl))
+          || !Number.isInteger(Number(body.sort_order)) || Number(body.sort_order) < 0 || Number(body.sort_order) > 9999
+          || typeof body.active !== 'boolean') return send(res, 400, { success: false, message: 'กรุณาตรวจชื่อ ประเภท รูปภาพ และลำดับเมนู' });
+      const item = { name_th: name, name_en: String(body.name_en || name).trim().slice(0, 100),
+        description: String(body.description || '').trim().slice(0, 500), category, image_url: imageUrl || null,
+        active: body.active, sort_order: Number(body.sort_order) };
+      if (existingId) {
+        const found = await lookup(base, key, 'kathin_drink_menu', `id=eq.${encodeURIComponent(existingId)}&select=id`);
+        if (!found?.length) return send(res, 404, { success: false, message: 'ไม่พบเมนูที่ต้องการแก้ไข' });
+        await rest(base, key, 'kathin_drink_menu', `id=eq.${encodeURIComponent(existingId)}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(item) });
+      } else {
+        item.id = `${category === 'blended' ? 'blend' : 'drip'}-${crypto.randomUUID()}`;
+        await rest(base, key, 'kathin_drink_menu', '', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(item) });
+      }
+      return send(res, 200, { success: true });
+    }
     if (action === 'order') {
       if (!/^(drip|blend)-/.test(String(body.menuId || ''))) return send(res, 400, { success: false, message: 'กรุณาเลือกเมนู' });
       const day = String(body.serviceDay || '');

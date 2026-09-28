@@ -155,4 +155,7 @@ grant usage, select on sequence
   public.kathin_drink_rights_id_seq,
   public.kathin_drink_orders_id_seq
 to service_role;
+alter table public.kathin_drink_menu
+  add column if not exists description text not null default '',
+  add column if not exists image_url text;
 commit;

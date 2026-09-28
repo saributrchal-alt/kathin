@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import DrinkMenuEditor from './DrinkMenuEditor.jsx';
+import './drinks.css';
 
 const DAY_CHOICES = [
   { value: '2026-11-07', label: 'เสาร์ 7 พ.ย. · คิว 7xxx' },
@@ -25,6 +27,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const [query, setQuery] = useState('');
   const [members, setMembers] = useState([]);
   const [target, setTarget] = useState(null);
+  const [editingMenu, setEditingMenu] = useState(null);
 
   const load = useCallback(async () => {
     const response = await fetch(`/api/kathin-drinks?view=${staffMode ? 'staff' : 'member'}`, { credentials: 'include', cache: 'no-store' });
@@ -70,6 +73,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       <div><small style={{ color: '#8d6b2e', fontWeight: 800 }}>KATHIN 2569 · 7–8 NOVEMBER</small><h1 style={{ margin: '5px 0', fontSize: 'clamp(24px,5vw,34px)' }}>{staffMode ? (th ? 'จัดการคิวเครื่องดื่ม' : 'Drink Service') : (th ? 'รับเครื่องดื่มฟรี 1 แก้ว' : 'Your free drink')}</h1></div>
       {onClose && <button onClick={onClose} style={{ ...button, background: '#eee8dd', color: '#514838' }}>{th ? 'กลับ' : 'Back'}</button>}
     </div>
+    {data?.admin && staffMode && <a href="#drink-menu-management" className="drink-secondary" style={{ display: 'inline-block', textDecoration: 'none', marginBottom: 18 }}>จัดการเมนู / เพิ่มรูปเครื่องดื่ม ↓</a>}
     {message && <div role="status" style={{ ...card, marginBottom: 14, background: '#fff9e9' }}>{message}</div>}
     {!data ? <div style={card}>{th ? 'กำลังโหลด...' : 'Loading...'}</div> : <>
       {!data.event.is_open && <div style={{ ...card, marginBottom: 14, background: '#f5f0e8' }}>{th ? 'ขณะนี้ปิดรับรายการเครื่องดื่มแล้ว' : 'Drink ordering is closed.'}</div>}
@@ -89,12 +93,33 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       {!staffMode && <section style={{ ...card, marginBottom: 16 }}>
         <strong>{th ? 'คิวของวันนี้' : 'Today’s queue'}: {DAY_CHOICES.find((d) => d.value === day)?.label}</strong>
       </section>}
-      {(staffMode ? Boolean(target) : data.availableRights > 0) && canOrder && <section style={{ ...card, marginBottom: 16 }}><h2 style={{ marginTop: 0 }}>{th ? 'เลือกเมนู · 1 สิทธิ์ต่อ 1 แก้ว' : 'Choose a drink · 1 right per cup'}</h2><div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 10 }}>{menu.map((item) => <button key={item.id} disabled={Boolean(working) || !item.active} onClick={() => fire('order', { memberId: target?.id || user?.memberId, menuId: item.id, serviceDay: day })} style={{ ...card, textAlign: 'left', cursor: item.active ? 'pointer' : 'not-allowed', padding: 14, opacity: item.active ? 1 : .55 }}><strong>{th ? item.name_th : item.name_en}</strong><div style={{ color: '#756d61', marginTop: 5 }}>{item.category === 'blended' ? (th ? 'ปั่น' : 'Blended') : (th ? 'ดริป' : 'Drip')} · 1 {th ? 'สิทธิ์' : 'right'}</div></button>)}</div></section>}
+      <section style={{ marginBottom: 24 }}>
+        <h2>{th ? 'เมนูเครื่องดื่ม · ฟรี 1 แก้วต่อ 1 สิทธิ์' : 'Drink menu · 1 free cup per right'}</h2>
+        <div className="drink-grid">{menu.map((item) => {
+          const enabled = canOrder && item.active && (staffMode || data.availableRights > 0) && !working;
+          const label = !item.active ? 'เมนูนี้พักให้บริการ' : !eventLive ? 'เปิดสั่ง 7–8 พ.ย. 2569' : !data.event.is_open ? 'ปิดรับรายการ' : staffMode && !target ? 'เลือกสมาชิกก่อนสั่ง' : !staffMode && data.availableRights < 1 ? 'ขอสิทธิ์เพิ่มที่โต๊ะเจ้าหน้าที่' : working ? 'กำลังดำเนินการ…' : 'เลือกสั่ง · 1 สิทธิ์';
+          return <article className="drink-tile" key={item.id}>
+            <div className="drink-photo">{item.image_url ? <img src={item.image_url} alt={th ? item.name_th : item.name_en} loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <span aria-hidden="true">{item.category === 'blended' ? '🥤' : '☕'}</span>}</div>
+            <div className="drink-tile-body"><small>{item.category === 'blended' ? 'ปั่น' : 'ดริป / ชง'} · ฟรี 1 แก้ว</small><h3>{th ? item.name_th : item.name_en || item.name_th}</h3>{item.description && <p>{item.description}</p>}
+              <button className="drink-primary drink-order" disabled={!enabled} onClick={() => fire('order', { memberId: target?.id || user?.memberId, menuId: item.id, serviceDay: day })}>{label}</button>
+            </div>
+          </article>;
+        })}</div>
+        {!menu.length && <p>กำลังจัดเตรียมเมนูเครื่องดื่ม</p>}
+      </section>
       {staffMode && <section style={card}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}><h2 style={{ margin: 0 }}>{th ? 'รายการตามคิว' : 'Orders by queue'}</h2><button onClick={() => load().catch((e) => setMessage(e.message))} style={{ ...button, background: '#eee8dd', color: '#514838' }}>{th ? 'รีเฟรชรายการ' : 'Refresh list'}</button></div>
         <div style={{ display: 'grid', gap: 9, marginTop: 14 }}>{orders.map((order) => <article key={order.id} style={{ border: '1px solid #e9e1d5', borderRadius: 12, padding: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><div><b style={{ color: '#976b24', fontSize: 20 }}>{order.queue_number}</b> · <b>{order.member_name || 'สมาชิก'}</b><div>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id} · {order.service_day === '2026-11-07' ? 'เสาร์ 7 พ.ย.' : 'อาทิตย์ 8 พ.ย.'}</div><small>{({ pending: 'รอรับออเดอร์', accepted: 'กำลังจัดเตรียม', sent: 'ส่งแล้ว', cancelled: 'ยกเลิก' })[order.status] || order.status}</small></div><div style={{ display: 'flex', gap: 7 }}>{order.status === 'pending' && <button style={button} disabled={Boolean(working)} onClick={() => fire('transition', { orderId: order.id, status: 'accepted' })}>{th ? 'รับออเดอร์' : 'Accept'}</button>}{order.status === 'accepted' && <button style={{ ...button, background: '#986b23' }} disabled={Boolean(working)} onClick={() => fire('transition', { orderId: order.id, status: 'sent' })}>{th ? 'ส่งออเดอร์' : 'Handed off'}</button>}</div></article>)}{!orders.length && <p>{th ? 'ยังไม่มีรายการในคิว' : 'No orders yet.'}</p>}</div>
       </section>}
       {!staffMode && <section style={{ ...card, marginTop: 16 }}><h2 style={{ marginTop: 0 }}>{th ? 'คิวของฉัน' : 'My queue numbers'}</h2>{orders.map((order) => <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '9px 0', borderBottom: '1px solid #eee8dd' }}><span>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id}</span><b>{order.queue_number}</b></div>)}{!orders.length && <p>{th ? 'ยังไม่มีรายการสั่งเครื่องดื่ม' : 'No orders yet.'}</p>}</section>}
-      {data.admin && staffMode && <section style={{ ...card, marginTop: 16 }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><h2 style={{ margin: 0 }}>{th ? 'เมนูเครื่องดื่ม' : 'Drink menu'}</h2><button style={button} onClick={() => printDrinkMenu(menu)}>{th ? 'พิมพ์เมนูหน้าเคาน์เตอร์' : 'Print counter menu'}</button></div><div style={{ display: 'grid', gap: 8, marginTop: 14 }}>{menu.map((item) => <div key={item.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}><span>{item.name_th} · {item.category === 'blended' ? 'ปั่น' : 'ดริป'}</span><button style={{ ...button, background: item.active ? '#a04a3f' : '#376b4d' }} disabled={Boolean(working)} onClick={() => fire('menu-active', { menuId: item.id, active: !item.active })}>{item.active ? (th ? 'ซ่อนเมนู' : 'Disable') : (th ? 'เปิดเมนู' : 'Enable')}</button></div>)}</div></section>}
+      {data.admin && staffMode && <section id="drink-menu-management" style={{ ...card, marginTop: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><h2 style={{ margin: 0 }}>จัดการเมนูเครื่องดื่ม</h2><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button className="drink-primary" disabled={editingMenu !== null} onClick={() => setEditingMenu({})}>+ เพิ่มเมนู</button><button className="drink-secondary" onClick={() => printDrinkMenu(menu)}>พิมพ์เมนูหน้าเคาน์เตอร์</button></div></div>
+        {editingMenu !== null && <DrinkMenuEditor key={editingMenu.id || 'new'} item={editingMenu} onCancel={() => setEditingMenu(null)} onSaved={async () => { await load(); setEditingMenu(null); setMessage('บันทึกเมนูเรียบร้อย สมาชิกเห็นข้อมูลล่าสุดเมื่ออัปเดตหน้า'); }} />}
+        <div style={{ marginTop: 14 }}>{menu.map((item) => <div key={item.id} className="drink-admin-row">
+          {item.image_url && <img src={item.image_url} alt="" loading="lazy" />}<span className="drink-admin-name"><strong>{item.name_th}</strong><br /><small>{item.category === 'blended' ? 'ปั่น' : 'ดริป / ชง'} · {item.active ? 'เปิดให้สั่ง' : 'พักให้บริการ'}</small></span>
+          <button className="drink-secondary" disabled={editingMenu !== null || Boolean(working)} onClick={() => setEditingMenu(item)}>แก้ไข</button>
+          <button style={{ ...button, background: item.active ? '#a04a3f' : '#376b4d' }} disabled={Boolean(working) || editingMenu !== null} onClick={() => fire('menu-active', { menuId: item.id, active: !item.active })}>{item.active ? 'พักให้บริการ' : 'เปิดให้สั่ง'}</button>
+        </div>)}</div>
+      </section>}
       {data.admin && staffMode && <section style={{ ...card, marginTop: 16 }}><h2 style={{ marginTop: 0 }}>{th ? 'สถานะระบบ' : 'Event status'}</h2><button style={{ ...button, background: data.event.is_open ? '#a04a3f' : '#376b4d' }} disabled={Boolean(working)} onClick={() => fire(data.event.is_open ? 'close' : 'open')}>{data.event.is_open ? (th ? 'ปิดรับรายการ' : 'Close ordering') : (th ? 'เปิดรับรายการ' : 'Open ordering')}</button></section>}
     </>}
   </main>;
