@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import DrinkMenuEditor from './DrinkMenuEditor.jsx';
 import './drinks.css';
 
+const shortQueue = (value) => value ? String(value).split('-').pop().slice(-3).padStart(3, '0') : '—';
 const PREPARATIONS = [['hot', 'ร้อน'], ['iced', 'เย็น'], ['blended', 'ปั่น']];
 const typesFor = (item) => item.preparations || (item.category === 'blended' ? ['blended'] : ['hot']);
 const typeLabel = (value) => PREPARATIONS.find(([key]) => key === value)?.[1] || '';
@@ -53,7 +54,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       const response = await fetch('/api/kathin-drinks', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...values }) });
       const body = await response.json();
       if (!response.ok || !body.success) throw new Error(body.message || 'บันทึกไม่สำเร็จ');
-      if (action === 'order') { setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${body.order.queue_number}`); setSelection(null); }
+      if (action === 'order') { setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${shortQueue(body.order.queue_number)}`); setSelection(null); }
       else setMessage(th ? 'บันทึกเรียบร้อย' : 'Saved');
       await load();
     } catch (error) { setMessage(error.message); }
@@ -88,7 +89,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       </section>}
       <section style={{ ...card, marginBottom: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-          <div><strong style={{ fontSize: 18 }}>{staffMode ? 'คิวที่ส่งแล้ว' : (th ? `สิทธิ์คงเหลือ ${data.availableRights || 0} แก้ว` : `${data.availableRights || 0} rights left`)}</strong><div style={{ color: '#736b60', marginTop: 4 }}>{th ? 'คิวปัจจุบันที่หน้าเคาท์เตอร์' : 'Current counter queue'}: <b style={{ color: '#9b712b', fontSize: 22 }}>{data.currentQueue || '—'}</b></div></div>
+          <div><strong style={{ fontSize: 18 }}>{staffMode ? 'คิวที่ส่งแล้ว' : (th ? `สิทธิ์คงเหลือ ${data.availableRights || 0} แก้ว` : `${data.availableRights || 0} rights left`)}</strong><div style={{ color: '#736b60', marginTop: 4 }}>{th ? 'คิวปัจจุบันที่หน้าเคาท์เตอร์' : 'Current counter queue'}: <b style={{ display: 'block', color: '#172d23', fontSize: 'clamp(80px, 22vw, 128px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', letterSpacing: '0.04em', marginTop: 12 }}>{shortQueue(data.currentQueue)}</b></div></div>
           <button style={{ ...button, background: '#eee8dd', color: '#514838' }} onClick={() => load().catch((e) => setMessage(e.message))}>{th ? 'อัปเดตคิว' : 'Refresh queue'}</button>
         </div>
       </section>
@@ -110,7 +111,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
         </div>
       </section>
       {staffMode && <section style={card}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}><h2 style={{ margin: 0 }}>{th ? 'รายการตามคิว' : 'Orders by queue'}</h2><button onClick={() => load().catch((e) => setMessage(e.message))} style={{ ...button, background: '#eee8dd', color: '#514838' }}>{th ? 'รีเฟรชรายการ' : 'Refresh list'}</button></div>
-        <div style={{ display: 'grid', gap: 9, marginTop: 14 }}>{orders.map((order) => <article key={order.id} style={{ border: '1px solid #e9e1d5', borderRadius: 12, padding: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><div><b style={{ color: '#976b24', fontSize: 20 }}>{order.queue_number}</b> · <b>{order.member_name || 'สมาชิก'}</b><div>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id}{order.preparation && ` · ${typeLabel(order.preparation)}`} · {formatServiceDay(order.service_day, th)}</div><small>{({ pending: 'รอรับออเดอร์', accepted: 'กำลังจัดเตรียม', sent: 'ส่งแล้ว', cancelled: 'ยกเลิก' })[order.status] || order.status}</small></div><div style={{ display: 'flex', gap: 7 }}>{order.status === 'pending' && <button style={button} disabled={Boolean(working)} onClick={() => fire('transition', { orderId: order.id, status: 'accepted' })}>{th ? 'รับออเดอร์' : 'Accept'}</button>}{order.status === 'accepted' && <button style={{ ...button, background: '#986b23' }} disabled={Boolean(working)} onClick={() => fire('transition', { orderId: order.id, status: 'sent' })}>{th ? 'ส่งออเดอร์' : 'Handed off'}</button>}</div></article>)}{!orders.length && <p>{th ? 'ยังไม่มีรายการในคิว' : 'No orders yet.'}</p>}</div>
+        <div style={{ display: 'grid', gap: 9, marginTop: 14 }}>{orders.map((order) => <article key={order.id} style={{ border: '1px solid #e9e1d5', borderRadius: 12, padding: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><div><b style={{ display: 'block', color: '#172d23', fontSize: 'clamp(64px, 18vw, 96px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', marginBottom: 10 }}>{shortQueue(order.queue_number)}</b> · <b>{order.member_name || 'สมาชิก'}</b><div>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id}{order.preparation && ` · ${typeLabel(order.preparation)}`} · {formatServiceDay(order.service_day, th)}</div><small>{({ pending: 'รอรับออเดอร์', accepted: 'กำลังจัดเตรียม', sent: 'ส่งแล้ว', cancelled: 'ยกเลิก' })[order.status] || order.status}</small></div><div style={{ display: 'flex', gap: 7 }}>{order.status === 'pending' && <button style={button} disabled={Boolean(working)} onClick={() => fire('transition', { orderId: order.id, status: 'accepted' })}>{th ? 'รับออเดอร์' : 'Accept'}</button>}{order.status === 'accepted' && <button style={{ ...button, background: '#986b23' }} disabled={Boolean(working)} onClick={() => fire('transition', { orderId: order.id, status: 'sent' })}>{th ? 'ส่งออเดอร์' : 'Handed off'}</button>}</div></article>)}{!orders.length && <p>{th ? 'ยังไม่มีรายการในคิว' : 'No orders yet.'}</p>}</div>
       </section>}
       {!staffMode && <section style={{ ...card, marginTop: 16 }}>
         <h2 style={{ marginTop: 0 }}>{th ? 'คิวของฉัน' : 'My queue numbers'}</h2>
