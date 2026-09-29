@@ -92,8 +92,7 @@ export default async function handler(req, res) {
       const bangkokToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
       if (bangkokToday > String(event.ends_on || '2026-11-08')) event.is_open = false;
       if (action === 'staff' && !canServe) return send(res, 403, { success: false, message: 'ต้องได้รับสิทธิ์ Staff งานกฐินก่อน' });
-      const day = bangkokToday;
-      const today = day === '2026-11-08' ? day : '2026-11-07';
+      const today = bangkokToday;
       const [rights, orders, sent] = await Promise.all([
         lookup(base, key, 'kathin_drink_rights', `event_key=eq.${EVENT}&member_id=eq.${encodeURIComponent(actorId)}&select=id,source,created_at&order=id.asc`),
         lookup(base, key, 'kathin_drink_orders', `event_key=eq.${EVENT}&${action === 'staff' ? '' : `member_id=eq.${encodeURIComponent(actorId)}&`}select=*&order=service_day.asc,queue_seq.asc`),
@@ -194,6 +193,6 @@ export default async function handler(req, res) {
   } catch (error) {
     const message = String(error?.message || 'ดำเนินการไม่สำเร็จ');
     const status = /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /INVALID_MENU|INVALID_SERVICE_DAY|INVALID_PREPARATION/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
-    return send(res, status, { success: false, message: ({ NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'เปิดรับคิวในวันที่ 7–8 พฤศจิกายน 2569', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้' })[message] || message });
+    return send(res, status, { success: false, message: ({ NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'ขณะนี้อยู่นอกช่วงวันที่เปิดรับออร์เดอร์', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้' })[message] || message });
   }
 }
