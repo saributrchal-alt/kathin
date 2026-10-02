@@ -31,6 +31,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const [target, setTarget] = useState(null);
   const [editingMenu, setEditingMenu] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [queueStatus, setQueueStatus] = useState('pending');
 
   const load = useCallback(async ({ queueOnly = false, signal } = {}) => {
     const response = await fetch(`/api/kathin-drinks?view=${staffMode ? 'staff' : 'member'}${queueOnly ? '&queueOnly=1' : ''}`, { credentials: 'include', cache: 'no-store', signal });
@@ -82,6 +83,22 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const orders = data?.orders || [];
   const activeOrders = orders.filter(o => o.service_day === day && ['pending', 'accepted'].includes(o.status));
   const todayOrders = orders.filter(o => o.service_day === day);
+  const queueTabs = [
+    { status:'pending', label:th?'ออร์เดอร์':'Orders', time:'created_at' },
+    { status:'accepted', label:th?'เรียกรับ':'Called', time:'accepted_at' },
+    { status:'sent', label:th?'รับแล้ว':'Collected', time:'sent_at' }
+  ];
+  const selectedQueueTab = queueTabs.find(tab => tab.status === queueStatus);
+  const queueTime = order => Date.parse(order[selectedQueueTab.time]) || Date.parse(order.created_at) || Date.parse(order.service_day) || 0;
+  const visibleStaffOrders = orders.filter(order => order.status === queueStatus)
+    .sort((a,b) => queueTime(b) - queueTime(a) || Number(b.id) - Number(a.id));
+  const selectQueueTabByKey = event => {
+    const index = queueTabs.findIndex(tab => tab.status === queueStatus);
+    const next = ({ArrowRight:(index+1)%queueTabs.length,ArrowLeft:(index+queueTabs.length-1)%queueTabs.length,Home:0,End:queueTabs.length-1})[event.key];
+    if (next === undefined) return;
+    event.preventDefault(); setQueueStatus(queueTabs[next].status);
+    event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next].focus();
+  };
   const wrap = { maxWidth: 1000, margin: '0 auto', padding: 'clamp(16px, 4vw, 32px)', color: '#302b22' };
   const card = { background: '#fff', border: '1px solid #e8dfd0', borderRadius: 18, padding: 18, boxShadow: '0 5px 18px rgba(50,40,20,.06)' };
   const button = { border: 0, borderRadius: 12, padding: '11px 16px', background: '#376b4d', color: 'white', fontWeight: 800, cursor: 'pointer' };
@@ -160,8 +177,37 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           <button className="drink-primary" disabled={!selection || !canOrder || Boolean(working) || !menu.some((m) => m.id === selection.menuId && m.active && typesFor(m).includes(selection.preparation)) || (!staffMode && data.availableRights < 1)} onClick={() => fire('order', { memberId: target?.id || user?.memberId, ...selection, serviceDay: day })}>{working ? 'กำลังดำเนินการ…' : !eventLive ? 'ยังไม่เปิดรับรายการในวันนี้' : !data.event.is_open ? 'ปิดรับรายการ' : staffMode && !target ? 'เลือกสมาชิกก่อนสั่ง' : !staffMode && data.availableRights < 1 ? 'ขอสิทธิ์เพิ่มที่โต๊ะเจ้าหน้าที่' : 'ยืนยันสั่ง 1 แก้ว'}</button>
         </div>
       </section>
-      {staffMode && <section id="drink-staff-queues" style={card}><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}><h2 style={{ margin: 0 }}>{th ? 'รายการตามคิว' : 'Orders by queue'}</h2><button onClick={() => load().catch((e) => setMessage(e.message))} style={{ ...button, background: '#eee8dd', color: '#514838' }}>{th ? 'รีเฟรชรายการ' : 'Refresh list'}</button></div>
-        <div style={{ display: 'grid', gap: 9, marginTop: 14 }}>{orders.map((order) => <article key={order.id} style={{ border: '1px solid #e9e1d5', borderRadius: 12, padding: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}><div><b style={{ display: 'block', color: '#172d23', fontSize: 'clamp(64px, 18vw, 96px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums', marginBottom: 10 }}>{shortQueue(order.queue_number)}</b> · <b>{order.member_name || 'สมาชิก'}</b><div>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id}{order.preparation && ` · ${typeLabel(order.preparation)}`} · {formatServiceDay(order.service_day, th)}</div><small className={order.status === 'accepted' ? 'drink-ready' : undefined}>{({ pending: 'รอเรียกรับ', accepted: 'ถึงคิวแล้ว', sent: 'ส่งเครื่องดื่มแล้ว', cancelled: 'ยกเลิก' })[order.status] || order.status}</small></div><div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>{order.status === 'pending' && <button style={button} disabled={Boolean(working) || order.service_day !== day} onClick={() => fire('transition', { orderId: order.id, status: 'accepted' })}>{th ? 'เรียกรับ' : 'Call for collection'}</button>}{order.status === 'accepted' && <><button type="button" className="drink-secondary" disabled={Boolean(working) || order.service_day !== day} onClick={() => fire('recall', { orderId: order.id })}>{th ? 'เรียกซ้ำ' : 'Call again'}</button><button style={{ ...button, background: '#986b23' }} disabled={Boolean(working) || order.service_day !== day} onClick={() => fire('transition', { orderId: order.id, status: 'sent' })}>{th ? 'ส่งเครื่องดื่ม' : 'Handed off'}</button></>}</div></article>)}{!orders.length && <p>{th ? 'ยังไม่มีรายการในคิว' : 'No orders yet.'}</p>}</div>
+      {staffMode && <section id="drink-staff-queues" style={card}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
+          <h2 style={{margin:0}}>{th?'จัดการคิว / ประวัติ':'Queues / History'}</h2>
+          <button type="button" onClick={()=>load().catch(error=>setMessage(error.message))} style={{...button,background:'#eee8dd',color:'#514838'}}>{th?'รีเฟรชรายการ':'Refresh list'}</button>
+        </div>
+        <div role="tablist" aria-label={th?'สถานะรายการเครื่องดื่ม':'Drink order status'} style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:6,marginTop:16}}>
+          {queueTabs.map(tab=><button key={tab.status} type="button" role="tab" id={`drink-queue-tab-${tab.status}`} aria-controls="drink-queue-history" aria-selected={queueStatus===tab.status} tabIndex={queueStatus===tab.status?0:-1}
+            onClick={()=>setQueueStatus(tab.status)} onKeyDown={selectQueueTabByKey}
+            style={{...button,padding:'12px 6px',minWidth:0,background:queueStatus===tab.status?'#376b4d':'#f0ece5',color:queueStatus===tab.status?'#fff':'#514838'}}>
+            {tab.label}<span style={{display:'block',fontSize:13,marginTop:3}}>{orders.filter(order=>order.status===tab.status).length}</span>
+          </button>)}
+        </div>
+        <p style={{fontSize:13,color:'#756c60',margin:'10px 0'}}>{th?'รวมประวัติทุกวัน · รายการล่าสุดอยู่บนสุด':'All dates · Most recent first'}</p>
+        <div role="tabpanel" id="drink-queue-history" aria-labelledby={`drink-queue-tab-${queueStatus}`} tabIndex={0} style={{display:'grid',gap:9,marginTop:14}}>
+          {visibleStaffOrders.map(order=><article key={order.id} style={{border:'1px solid #e9e1d5',borderRadius:12,padding:13,display:'flex',alignItems:'center',justifyContent:'space-between',gap:12,flexWrap:'wrap'}}>
+            <div>
+              <b style={{display:'block',color:'#172d23',fontSize:'clamp(64px,18vw,96px)',fontWeight:900,lineHeight:1.1,fontVariantNumeric:'tabular-nums',marginBottom:10}}>{shortQueue(order.queue_number)}</b>
+              <b>{order.member_name||'สมาชิก'}</b>
+              <div>{menu.find(item=>item.id===order.menu_id)?.name_th||order.menu_id}{order.preparation&&` · ${typeLabel(order.preparation)}`} · {formatServiceDay(order.service_day,th)}</div>
+              <small className={order.status==='accepted'?'drink-ready':undefined}>{({pending:th?'รอเรียกรับ':'Waiting to be called',accepted:th?'ถึงคิวแล้ว':'Ready for collection',sent:th?'รับเครื่องดื่มแล้ว':'Collected'})[order.status]}</small>
+            </div>
+            <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
+              {order.status==='pending'&&<button type="button" style={button} disabled={Boolean(working)||order.service_day!==day} onClick={()=>fire('transition',{orderId:order.id,status:'accepted'})}>{th?'เรียกรับ':'Call for collection'}</button>}
+              {order.status==='accepted'&&<>
+                <button type="button" className="drink-secondary" disabled={Boolean(working)||order.service_day!==day} onClick={()=>fire('recall',{orderId:order.id})}>{th?'เรียกซ้ำ':'Call again'}</button>
+                <button type="button" style={{...button,background:'#986b23'}} disabled={Boolean(working)||order.service_day!==day} onClick={()=>fire('transition',{orderId:order.id,status:'sent'})}>{th?'ส่งเครื่องดื่ม':'Handed off'}</button>
+              </>}
+            </div>
+          </article>)}
+          {!visibleStaffOrders.length&&<p>{th?`ยังไม่มีรายการในสถานะ “${selectedQueueTab.label}”`:`No ${selectedQueueTab.label.toLowerCase()} yet.`}</p>}
+        </div>
       </section>}
       {data.admin && staffMode && <section id="drink-menu-management" style={{ ...card, marginTop: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}><h2 style={{ margin: 0 }}>จัดการเมนูเครื่องดื่ม</h2><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button className="drink-primary" disabled={editingMenu !== null} onClick={() => setEditingMenu({})}>+ เพิ่มเมนู</button><button className="drink-secondary" onClick={() => printDrinkMenu(menu)}>พิมพ์เมนูหน้าเคาน์เตอร์</button></div></div>
