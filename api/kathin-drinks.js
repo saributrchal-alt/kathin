@@ -32,7 +32,6 @@ async function rest(base, key, table, query, options = {}) {
   return data;
 }
 async function lookup(base, key, table, query) { return rest(base, key, table, query); }
-function isAdmin(session) { return session?.role === 'admin'; }
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store, private');
@@ -70,9 +69,15 @@ export default async function handler(req, res) {
   if (!session?.memberId) return send(res, 401, { success: false, message: 'กรุณาเข้าสู่ระบบสมาชิก' });
   const actorId = String(session.memberId);
   try {
-    const staffRows = await lookup(base, key, 'kathin_drink_staff', `member_id=eq.${encodeURIComponent(actorId)}&active=eq.true&select=member_id`);
+    const [staffRows, actors] = await Promise.all([
+      lookup(base, key, 'kathin_drink_staff', `member_id=eq.${encodeURIComponent(actorId)}&active=eq.true&select=member_id`),
+      lookup(base, key, 'members', `id=eq.${encodeURIComponent(actorId)}&select=id,role,membership_status&limit=1`)
+    ]);
+    const actor = actors?.[0];
+    if (!actor || (actor.membership_status && actor.membership_status !== 'active'))
+      return send(res, 403, { success:false, message:'สมาชิกไม่พร้อมใช้งาน' });
     const staff = Array.isArray(staffRows) && staffRows.length > 0;
-    const admin = isAdmin(session);
+    const admin = session.role === 'admin' && actor.role === 'admin' && !session.actingAdminId;
     const canServe = staff || admin;
 
     if (req.method === 'GET') {
@@ -116,7 +121,7 @@ export default async function handler(req, res) {
         }
       }
       if (queueOnly) return send(res, 200, { success: true, orders: data.orders, currentQueue: data.currentQueue,
-        currentCall: data.currentCall, serviceDay: today, viewerId: actorId });
+        currentCall: data.currentCall, serviceDay: today, viewerId: actorId, staff, admin });
       return send(res, 200, { success: true, ...data });
     }
 
