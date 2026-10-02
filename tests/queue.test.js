@@ -25,7 +25,7 @@ async function run({ method = 'POST', body = {}, query = {}, staff = true, curre
       else if (url.includes('status=in.')) result = [{ ...order(), status: 'accepted', accepted_at: new Date().toISOString() }];
       else result = current ? [current] : [];
     }
-    else if (url.includes('/members?')) result = [{ id: 'customer', full_name: 'สมาชิกทดสอบ' }];
+    else if (url.includes('/members?')) result = url.includes('id=eq.actor') ? [{id:'actor',role:'member',membership_status:'active'}] : [{ id: 'customer', full_name: 'สมาชิกทดสอบ' }];
     return { ok: true, text: async () => JSON.stringify(result) };
   };
   const res = { setHeader() {}, status(n) { this.statusCode = n; return this; }, json(value) { this.body = value; return this; } };
@@ -36,7 +36,7 @@ async function run({ method = 'POST', body = {}, query = {}, staff = true, curre
 }
 test('only staff can call, recall, or hand over a drink', async () => {
   for (const body of [{ action: 'transition', status: 'accepted', orderId: 12 }, { action: 'recall', orderId: 12 }, { action: 'transition', status: 'sent', orderId: 12 }]) {
-    const { res, calls } = await run({ staff: false, body }); assert.equal(res.statusCode, 403); assert.equal(calls.length, 1);
+    const { res, calls } = await run({ staff: false, body }); assert.equal(res.statusCode, 403); assert.equal(calls.length, 2);
   }
 });
 test('a first call persists before the signed LINE relay and uses a conditional update', async () => {
@@ -88,5 +88,5 @@ test('member queue polling exposes only their orders and public call metadata', 
   assert.ok(!calls.some(c => /menu|rights/.test(c.url))); assert.equal(res.body.viewerId, 'actor');
 });
 test('a member cannot poll the staff queue', async () => {
-  const { res, calls } = await run({ staff: false, method: 'GET', query: { view: 'staff', queueOnly: '1' } }); assert.equal(res.statusCode, 403); assert.equal(calls.length, 1);
+  const { res, calls } = await run({ staff: false, method: 'GET', query: { view: 'staff', queueOnly: '1' } }); assert.equal(res.statusCode, 403); assert.equal(calls.length, 2);
 });
