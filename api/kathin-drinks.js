@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { uploadPublicImage } from '../lib/_media-upload.js';
 import { createSessionToken, getSessionFromRequest, setSessionCookie } from '../lib/_auth.js';
+import { notifyQueueCall } from '../lib/_queue-notify.js';
 
 const EVENT = 'kathin-2569';
 const headers = (key, extra = {}) => ({
@@ -84,24 +85,27 @@ export default async function handler(req, res) {
         const matches = await lookup(base, key, 'members', `or=(full_name.ilike.${pattern},display_name.ilike.${pattern})&select=id,full_name,display_name&limit=12`);
         return send(res, 200, { success: true, members: (matches || []).map((m) => ({ id: m.id, name: m.full_name || m.display_name || 'สมาชิก' })) });
       }
-      const [eventRows, menu] = await Promise.all([
+      if (action === 'staff' && !canServe) return send(res, 403, { success: false, message: 'ต้องได้รับสิทธิ์ Staff งานกฐินก่อน' });
+      const queueOnly = req.query?.queueOnly === '1';
+      const [eventRows, menu] = queueOnly ? [[], []] : await Promise.all([
         lookup(base, key, 'kathin_drink_event', `event_key=eq.${EVENT}&select=event_key,is_open,starts_on,ends_on`),
         lookup(base, key, 'kathin_drink_menu', 'select=*&order=sort_order.asc,id.asc')
       ]);
       const event = eventRows?.[0] || { event_key: EVENT, is_open: false };
       const bangkokToday = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
       if (bangkokToday > String(event.ends_on || '2026-11-08')) event.is_open = false;
-      if (action === 'staff' && !canServe) return send(res, 403, { success: false, message: 'ต้องได้รับสิทธิ์ Staff งานกฐินก่อน' });
       const today = bangkokToday;
-      const [rights, orders, sent] = await Promise.all([
-        lookup(base, key, 'kathin_drink_rights', `event_key=eq.${EVENT}&member_id=eq.${encodeURIComponent(actorId)}&select=id,source,created_at&order=id.asc`),
+      const [rights, orders, called] = await Promise.all([
+        queueOnly ? [] : lookup(base, key, 'kathin_drink_rights', `event_key=eq.${EVENT}&member_id=eq.${encodeURIComponent(actorId)}&select=id,source,created_at&order=id.asc`),
         lookup(base, key, 'kathin_drink_orders', `event_key=eq.${EVENT}&${action === 'staff' ? '' : `member_id=eq.${encodeURIComponent(actorId)}&`}select=*&order=service_day.asc,queue_seq.asc`),
-        lookup(base, key, 'kathin_drink_orders', `event_key=eq.${EVENT}&service_day=eq.${today}&status=eq.sent&select=queue_number&order=queue_seq.desc&limit=1`)
+        lookup(base, key, 'kathin_drink_orders', `event_key=eq.${EVENT}&service_day=eq.${today}&status=in.(accepted,sent)&accepted_at=not.is.null&select=id,queue_number,accepted_at,status&order=accepted_at.desc,id.desc&limit=1`)
       ]);
       const memberOrders = (orders || []).filter((o) => o.member_id === actorId);
       const usedRights = new Set(memberOrders.filter((o) => o.status !== 'cancelled').map((o) => String(o.right_id)));
       const data = { event, menu: (menu || []).filter((item) => item.active || admin), rights: rights || [], availableRights: (rights || []).filter((r) => !usedRights.has(String(r.id))).length,
-        orders: orders || [], currentQueue: sent?.[0]?.queue_number || null, serviceDay: today, staff, admin };
+        orders: orders || [], currentQueue: called?.[0]?.queue_number || null,
+        currentCall: called?.[0] ? { orderId: called[0].id, queueNumber: called[0].queue_number, calledAt: called[0].accepted_at, status: called[0].status } : null,
+        serviceDay: today, viewerId: actorId, staff, admin };
       if (action === 'staff') {
         const memberIds = [...new Set((orders || []).map((o) => o.member_id).filter(Boolean))];
         if (memberIds.length) {
@@ -111,6 +115,8 @@ export default async function handler(req, res) {
           data.orders = data.orders.map((o) => ({ ...o, member_name: names.get(String(o.member_id)) || 'สมาชิก' }));
         }
       }
+      if (queueOnly) return send(res, 200, { success: true, orders: data.orders, currentQueue: data.currentQueue,
+        currentCall: data.currentCall, serviceDay: today, viewerId: actorId });
       return send(res, 200, { success: true, ...data });
     }
 
@@ -158,15 +164,29 @@ export default async function handler(req, res) {
       });
       return send(res, 200, { success: true, order: result });
     }
-    if (action === 'transition') {
+    if (action === 'transition' || action === 'recall') {
       if (!canServe) return send(res, 403, { success: false, message: 'ต้องได้รับสิทธิ์ Staff งานกฐินก่อน' });
-      const next = body.status === 'accepted' ? 'accepted' : body.status === 'sent' ? 'sent' : '';
-      if (!next || !Number.isInteger(Number(body.orderId))) return send(res, 400, { success: false, message: 'ข้อมูลคิวไม่ถูกต้อง' });
-      const current = await lookup(base, key, 'kathin_drink_orders', `id=eq.${Number(body.orderId)}&select=id,status`);
-      if (!current?.length || !['pending', 'accepted'].includes(current[0].status) || (next === 'accepted' && current[0].status !== 'pending')) return send(res, 409, { success: false, message: 'สถานะคิวเปลี่ยนไปแล้ว กรุณาอัปเดตรายการ' });
-      const patch = next === 'accepted' ? { status: next, accepted_by: actorId, accepted_at: new Date().toISOString() } : { status: next, sent_by: actorId, sent_at: new Date().toISOString() };
-      await rest(base, key, 'kathin_drink_orders', `id=eq.${Number(body.orderId)}&status=eq.${current[0].status}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(patch) });
-      return send(res, 200, { success: true });
+      const recall = action === 'recall';
+      const next = recall || body.status === 'accepted' ? 'accepted' : body.status === 'sent' ? 'sent' : '';
+      if (!next || !Number.isSafeInteger(Number(body.orderId)) || Number(body.orderId) < 1) return send(res, 400, { success: false, message: 'ข้อมูลคิวไม่ถูกต้อง' });
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' });
+      const scope = `id=eq.${Number(body.orderId)}&event_key=eq.${EVENT}&service_day=eq.${today}`;
+      const current = (await lookup(base, key, 'kathin_drink_orders', `${scope}&select=id,status,accepted_at`))?.[0];
+      const expectedStatus = !recall && next === 'accepted' ? 'pending' : 'accepted';
+      if (!current || current.status !== expectedStatus) return send(res, 409, { success: false, message: 'สถานะคิวเปลี่ยนไปแล้ว หรือเป็นคิววันก่อน กรุณาอัปเดตรายการ' });
+      const calledAt = new Date(Math.max(Date.now(), Date.parse(current.accepted_at) + 1 || 0)).toISOString();
+      const patch = recall ? { accepted_at: calledAt } : next === 'accepted'
+        ? { status: next, accepted_by: actorId, accepted_at: calledAt }
+        : { status: next, sent_by: actorId, sent_at: new Date().toISOString() };
+      const version = recall ? `&accepted_at=${current.accepted_at ? `eq.${encodeURIComponent(current.accepted_at)}` : 'is.null'}` : '';
+      const changed = await rest(base, key, 'kathin_drink_orders', `${scope}&status=eq.${expectedStatus}${version}`, {
+        method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch)
+      });
+      if (!changed?.length) return send(res, 409, { success: false, message: 'เจ้าหน้าที่ท่านอื่นเปลี่ยนคิวนี้แล้ว กรุณาอัปเดตรายการ' });
+      // A manual recall is an audio event only. It never consumes another right or sends another LINE.
+      const notification = !recall && next === 'accepted' ? await notifyQueueCall(changed[0], actorId) : null;
+      return send(res, 200, { success: true, order: changed[0], notification,
+        warning: notification?.status === 'failed' ? 'เรียกรับคิวแล้ว แต่ส่ง LINE ไม่สำเร็จ สมาชิกยังดูคิวบนหน้านี้ได้' : undefined });
     }
     if (action === 'grant') {
       if (!canServe || !/^[\w-]{1,100}$/.test(String(body.memberId || ''))) return send(res, 403, { success: false, message: 'ไม่มีสิทธิ์ออกสิทธิ์ให้สมาชิก' });
