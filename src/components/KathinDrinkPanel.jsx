@@ -31,6 +31,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const [target, setTarget] = useState(null);
   const [editingMenu, setEditingMenu] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [displayConsent, setDisplayConsent] = useState(false);
   const [queueStatus, setQueueStatus] = useState('pending');
 
   const load = useCallback(async ({ queueOnly = false, signal } = {}) => {
@@ -66,7 +67,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       const response = await fetch('/api/kathin-drinks', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...values }) });
       const body = await response.json();
       if (!response.ok || !body.success) throw new Error(body.message || 'บันทึกไม่สำเร็จ');
-      if (action === 'order') { setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${shortQueue(body.order.queue_number)}`); setSelection(null); }
+      if (action === 'order') { setDisplayConsent(false); setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${shortQueue(body.order.queue_number)}`); setSelection(null); }
       else setMessage(body.warning || (action === 'recall' ? (th ? 'เรียกเสียงซ้ำแล้ว' : 'Called again') : action === 'transition' && values.status === 'accepted'
         ? (th ? `เรียกรับคิว ${shortQueue(body.order.queue_number)} แล้ว${body.notification?.status === 'sent' ? ' · แจ้ง LINE แล้ว' : ''}` : 'Queue called')
         : (th ? 'บันทึกเรียบร้อย' : 'Saved')));
@@ -81,11 +82,12 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const eventLive = Boolean(data?.event && today >= data.event.starts_on && today <= data.event.ends_on);
   const canOrder = eventLive && Boolean(data?.event?.is_open) && (staffMode ? Boolean(target) : true);
   const orders = data?.orders || [];
-  const activeOrders = orders.filter(o => o.service_day === day && ['pending', 'accepted'].includes(o.status));
+  const activeOrders = orders.filter(o => o.service_day === day && ['pending', 'accepted', 'ready'].includes(o.status));
   const todayOrders = orders.filter(o => o.service_day === day);
   const queueTabs = [
     { status:'pending', label:th?'ออร์เดอร์':'Orders', time:'created_at' },
-    { status:'accepted', label:th?'เรียกรับ':'Called', time:'accepted_at' },
+    { status:'accepted', label:th?'กำลังเตรียม':'Preparing', time:'accepted_at' },
+    { status:'ready', label:th?'พร้อมรับ':'Ready', time:'ready_at' },
     { status:'sent', label:th?'รับแล้ว':'Collected', time:'sent_at' }
   ];
   const selectedQueueTab = queueTabs.find(tab => tab.status === queueStatus);
@@ -153,7 +155,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             {activeOrders.map((order, index) => <div key={order.id} style={{ marginTop: index ? 20 : 0, borderTop: index ? '1px solid #e6cc91' : undefined, paddingTop: index ? 16 : 0 }}>
               <b style={{ display: 'block', color: '#573b11', fontSize: 'clamp(48px, 14vw, 112px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{shortQueue(order.queue_number)}</b>
               <div style={{ marginTop: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id}{order.preparation && ` · ${typeLabel(order.preparation)}`}</div>
-              {order.status === 'accepted' ? <div className="drink-ready" role="status">{th ? 'ถึงคิวแล้ว' : 'Your drink is ready'}</div> : <small style={{ display: 'block', marginTop: 6 }}>{th ? 'รอเรียกรับเครื่องดื่ม' : 'Waiting to be called'}</small>}
+              {order.status === 'ready' ? <div className="drink-ready" role="status">{th ? 'เครื่องดื่มพร้อมรับแล้ว' : 'Your drink is ready'}</div> : order.status === 'accepted' ? <small style={{display:'block',marginTop:6}}>{th ? 'กำลังเตรียมเครื่องดื่ม' : 'Preparing your drink'}</small> : <small style={{ display: 'block', marginTop: 6 }}>{th ? 'รอเรียกรับเครื่องดื่ม' : 'Waiting to be called'}</small>}
             </div>)}
             {!activeOrders.length && <><b style={{ display: 'block', fontSize: 'clamp(48px, 14vw, 112px)', lineHeight: 1.1, color: '#573b11' }}>—</b><small style={{ display: 'block', marginTop: 12 }}>{th ? 'ไม่มีคิวที่รอรับเครื่องดื่ม' : 'No drinks waiting for collection'}</small></>}
           </div>}
@@ -173,8 +175,12 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           </div>)}
         </div>
         {!menu.length && <p>กำลังจัดเตรียมเมนูเครื่องดื่ม</p>}
-        <div className="drink-choice-summary" aria-live="polite"><div>{selection ? <><strong>{menu.find((m) => m.id === selection.menuId)?.name_th} · {typeLabel(selection.preparation)}</strong><small>จำนวน 1 แก้ว · ใช้ 1 สิทธิ์{staffMode && target ? ` · ${target.name}` : ''}</small></> : <span>เลือกช่องร้อน เย็น หรือปั่น ของเมนูที่ต้องการ</span>}</div>
-          <button className="drink-primary" disabled={!selection || !canOrder || Boolean(working) || !menu.some((m) => m.id === selection.menuId && m.active && typesFor(m).includes(selection.preparation)) || (!staffMode && data.availableRights < 1)} onClick={() => fire('order', { memberId: target?.id || user?.memberId, ...selection, serviceDay: day })}>{working ? 'กำลังดำเนินการ…' : !eventLive ? 'ยังไม่เปิดรับรายการในวันนี้' : !data.event.is_open ? 'ปิดรับรายการ' : staffMode && !target ? 'เลือกสมาชิกก่อนสั่ง' : !staffMode && data.availableRights < 1 ? 'ขอสิทธิ์เพิ่มที่โต๊ะเจ้าหน้าที่' : 'ยืนยันสั่ง 1 แก้ว'}</button>
+        {!staffMode && <label style={{display:'flex',alignItems:'flex-start',gap:10,padding:'12px 13px',borderRadius:12,background:'#ecf7ec',border:'1px solid #c7dcc9',fontSize:13,lineHeight:1.65,margin:'12px 0',cursor:'pointer'}}>
+           <input type="checkbox" checked={displayConsent} onChange={e=>setDisplayConsent(e.target.checked)} style={{marginTop:3,width:20,height:20,accentColor:'#28774a'}} />
+           <span>ยินยอมให้แสดงชื่อและรูปโปรไฟล์สาธารณะ (หากมี) บนจอคิวงานกฐินสำหรับรายการนี้ หากไม่เลือก จะแสดงเฉพาะเลขคิวและไอคอนสมาชิก</span>
+         </label>}
+         <div className="drink-choice-summary" aria-live="polite"><div>{selection ? <><strong>{menu.find((m) => m.id === selection.menuId)?.name_th} · {typeLabel(selection.preparation)}</strong><small>จำนวน 1 แก้ว · ใช้ 1 สิทธิ์{staffMode && target ? ` · ${target.name}` : ''}</small></> : <span>เลือกช่องร้อน เย็น หรือปั่น ของเมนูที่ต้องการ</span>}</div>
+          <button className="drink-primary" disabled={!selection || !canOrder || Boolean(working) || !menu.some((m) => m.id === selection.menuId && m.active && typesFor(m).includes(selection.preparation)) || (!staffMode && data.availableRights < 1)} onClick={() => fire('order', { memberId: target?.id || user?.memberId, ...selection, serviceDay: day, displayConsent: !staffMode && displayConsent })}>{working ? 'กำลังดำเนินการ…' : !eventLive ? 'ยังไม่เปิดรับรายการในวันนี้' : !data.event.is_open ? 'ปิดรับรายการ' : staffMode && !target ? 'เลือกสมาชิกก่อนสั่ง' : !staffMode && data.availableRights < 1 ? 'ขอสิทธิ์เพิ่มที่โต๊ะเจ้าหน้าที่' : 'ยืนยันสั่ง 1 แก้ว'}</button>
         </div>
       </section>
       {staffMode && <section id="drink-staff-queues" style={card}>
@@ -182,7 +188,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           <h2 style={{margin:0}}>{th?'จัดการคิว / ประวัติ':'Queues / History'}</h2>
           <button type="button" onClick={()=>load().catch(error=>setMessage(error.message))} style={{...button,background:'#eee8dd',color:'#514838'}}>{th?'รีเฟรชรายการ':'Refresh list'}</button>
         </div>
-        <div role="tablist" aria-label={th?'สถานะรายการเครื่องดื่ม':'Drink order status'} style={{display:'grid',gridTemplateColumns:'repeat(3,minmax(0,1fr))',gap:6,marginTop:16}}>
+        <div role="tablist" aria-label={th?'สถานะรายการเครื่องดื่ม':'Drink order status'} style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:6,marginTop:16}}>
           {queueTabs.map(tab=><button key={tab.status} type="button" role="tab" id={`drink-queue-tab-${tab.status}`} aria-controls="drink-queue-history" aria-selected={queueStatus===tab.status} tabIndex={queueStatus===tab.status?0:-1}
             onClick={()=>setQueueStatus(tab.status)} onKeyDown={selectQueueTabByKey}
             style={{...button,padding:'12px 6px',minWidth:0,background:queueStatus===tab.status?'#376b4d':'#f0ece5',color:queueStatus===tab.status?'#fff':'#514838'}}>
