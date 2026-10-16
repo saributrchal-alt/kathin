@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import DrinkMenuEditor from './DrinkMenuEditor.jsx';
 import { useQueueAudio, useQueuePolling } from './useQueueUpdates.js';
 import './drinks.css';
@@ -31,6 +32,9 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const [target, setTarget] = useState(null);
   const [editingMenu, setEditingMenu] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [orderReviewOpen, setOrderReviewOpen] = useState(false);
+  const [orderError, setOrderError] = useState('');
+  const orderReviewCloseRef = useRef(null);
   const [displayConsent, setDisplayConsent] = useState(false);
   const [queueStatus, setQueueStatus] = useState('pending');
 
@@ -72,7 +76,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
         ? (th ? `เรียกรับคิว ${shortQueue(body.order.queue_number)} แล้ว${body.notification?.status === 'sent' ? ' · แจ้ง LINE แล้ว' : ''}` : 'Queue called')
         : (th ? 'บันทึกเรียบร้อย' : 'Saved')));
       await load();
-    } catch (error) { setMessage(error.message); }
+    } catch (error) { setMessage(error.message); if (action === 'order') setOrderError(error.message); }
     finally { setWorking(''); }
   };
 
@@ -81,6 +85,28 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const day = data?.serviceDay || today;
   const eventLive = Boolean(data?.event && today >= data.event.starts_on && today <= data.event.ends_on);
   const canOrder = eventLive && Boolean(data?.event?.is_open) && (staffMode ? Boolean(target) : true);
+  const selectedItem = menu.find(item => item.id === selection?.menuId);
+  const selectionValid = Boolean(selectedItem?.active && typesFor(selectedItem).includes(selection?.preparation));
+  const hasDrinkRight = staffMode ? true : (data?.availableRights || 0) > 0;
+  const maySubmit = Boolean(selectionValid && canOrder && hasDrinkRight && !working);
+  const showMemberDock = !staffMode && orderFirst && Boolean(data);
+  useEffect(() => {
+    if (!orderReviewOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const frame = window.requestAnimationFrame(() => orderReviewCloseRef.current?.focus());
+    const keydown = event => {
+      if (event.key === 'Escape' && !working) {
+        event.preventDefault(); setOrderReviewOpen(false);
+      }
+    };
+    document.addEventListener('keydown', keydown);
+    return () => {
+      document.removeEventListener('keydown', keydown);
+      window.cancelAnimationFrame(frame);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [orderReviewOpen, working]);
   const orders = data?.orders || [];
   const activeOrders = orders.filter(o => o.service_day === day && ['pending', 'preparing', 'accepted', 'ready'].includes(o.status));
   const todayOrders = orders.filter(o => o.service_day === day);
@@ -102,7 +128,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
     event.preventDefault(); setQueueStatus(queueTabs[next].status);
     event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[next].focus();
   };
-  const wrap = { maxWidth: 1000, margin: '0 auto', padding: 'clamp(16px, 4vw, 32px)', color: '#302b22' };
+  const wrap = { maxWidth: 1000, margin: '0 auto', padding: 'clamp(16px, 4vw, 32px)', paddingBottom: orderFirst ? 150 : 32, color: '#302b22' };
   const card = { background: '#fff', border: '1px solid #e8dfd0', borderRadius: 18, padding: 18, boxShadow: '0 5px 18px rgba(50,40,20,.06)' };
   const button = { border: 0, borderRadius: 12, padding: '11px 16px', background: '#376b4d', color: 'white', fontWeight: 800, cursor: 'pointer' };
 
@@ -172,7 +198,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           <div className="drink-check-row drink-check-head"><strong>เมนูเครื่องดื่ม</strong>{PREPARATIONS.map(([key, label]) => <strong key={key}>{label}</strong>)}</div>
           {menu.map((item) => <div className={`drink-check-row ${selection?.menuId === item.id ? 'drink-check-selected' : ''}`} key={item.id}>
             <div className="drink-check-name"><div className="drink-check-thumb">{item.image_url ? <img src={item.image_url} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <span aria-hidden="true">{item.category === 'blended' ? '🥤' : '☕'}</span>}</div><div><strong>{th ? item.name_th : item.name_en || item.name_th}</strong>{item.description && <small>{item.description}</small>}{!item.active && <small>พักให้บริการ</small>}</div></div>
-            {PREPARATIONS.map(([value, label]) => <div className="drink-check-cell" key={value}>{typesFor(item).includes(value) ? <label className="drink-check-control"><input type="radio" name="drink-choice" aria-label={`${item.name_th} ${label}`} checked={selection?.menuId === item.id && selection?.preparation === value} disabled={!item.active || Boolean(working)} onChange={() => setSelection({ menuId: item.id, preparation: value })} /><span aria-hidden="true">✓</span></label> : <span aria-label="ไม่มีรูปแบบนี้">—</span>}</div>)}
+            {PREPARATIONS.map(([value, label]) => <div className="drink-check-cell" key={value}>{typesFor(item).includes(value) ? <label className="drink-check-control"><input type="radio" name="drink-choice" aria-label={`${item.name_th} ${label}`} checked={selection?.menuId === item.id && selection?.preparation === value} disabled={!item.active || Boolean(working)} onChange={() => { setSelection({ menuId: item.id, preparation: value }); setOrderError(''); }} /><span aria-hidden="true">✓</span></label> : <span aria-label="ไม่มีรูปแบบนี้">—</span>}</div>)}
           </div>)}
         </div>
         {!menu.length && <p>กำลังจัดเตรียมเมนูเครื่องดื่ม</p>}
@@ -180,10 +206,74 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
            <input type="checkbox" checked={displayConsent} onChange={e=>setDisplayConsent(e.target.checked)} style={{marginTop:3,width:20,height:20,accentColor:'#28774a'}} />
            <span>ยินยอมให้แสดงชื่อและรูปโปรไฟล์สาธารณะ (หากมี) บนจอคิวงานกฐินสำหรับรายการนี้ หากไม่เลือก จะแสดงเฉพาะเลขคิวและไอคอนสมาชิก</span>
          </label>}
-         <div className="drink-choice-summary" aria-live="polite"><div>{selection ? <><strong>{menu.find((m) => m.id === selection.menuId)?.name_th} · {typeLabel(selection.preparation)}</strong><small>จำนวน 1 แก้ว · ใช้ 1 สิทธิ์{staffMode && target ? ` · ${target.name}` : ''}</small></> : <span>เลือกช่องร้อน เย็น หรือปั่น ของเมนูที่ต้องการ</span>}</div>
-          <button className="drink-primary" disabled={!selection || !canOrder || Boolean(working) || !menu.some((m) => m.id === selection.menuId && m.active && typesFor(m).includes(selection.preparation)) || (!staffMode && data.availableRights < 1)} onClick={() => fire('order', { memberId: target?.id || user?.memberId, ...selection, serviceDay: day, displayConsent: !staffMode && displayConsent })}>{working ? 'กำลังดำเนินการ…' : !eventLive ? 'ยังไม่เปิดรับรายการในวันนี้' : !data.event.is_open ? 'ปิดรับรายการ' : staffMode && !target ? 'เลือกสมาชิกก่อนสั่ง' : !staffMode && data.availableRights < 1 ? 'ขอสิทธิ์เพิ่มที่โต๊ะเจ้าหน้าที่' : 'ยืนยันสั่ง 1 แก้ว'}</button>
-        </div>
+         <div className="drink-choice-summary" aria-live="polite">
+           <div>{selection ? <>
+             <strong>{selectedItem?.name_th} · {typeLabel(selection.preparation)}</strong>
+             <small>จำนวน 1 แก้ว · ใช้ 1 สิทธิ์{staffMode && target ? ` · ${target.name}` : ''}</small>
+           </> : <span>เลือกช่องร้อน เย็น หรือปั่น ของเมนูที่ต้องการ</span>}</div>
+           {staffMode && <button type="button" className="drink-primary" disabled={!maySubmit}
+             onClick={() => fire('order', { memberId: target?.id || user?.memberId, ...selection, serviceDay: day, displayConsent: false })}>
+             {working ? 'กำลังดำเนินการ…' : 'ยืนยันสั่ง 1 แก้ว'}
+           </button>}
+           {!staffMode && !orderFirst && <button type="button" className="drink-primary"
+             disabled={!selectionValid || Boolean(working)}
+             onClick={() => { setOrderError(''); setOrderReviewOpen(true); }}>ตรวจสอบและยืนยันออร์เดอร์ →</button>}
+         </div>
       </section>
+      {showMemberDock && <div className="drink-member-order-dock" role="region" aria-label="เครื่องดื่มที่เลือกและการยืนยัน">
+        <div className="drink-member-order-dock-inner">
+          <div className="drink-member-order-dock-selection">
+            <small>{selectionValid ? 'เครื่องดื่มที่เลือก · 1 แก้ว' : 'เลือกเครื่องดื่ม 1 แก้ว'}</small>
+            <strong>{selectionValid ? `${selectedItem.name_th} · ${typeLabel(selection.preparation)}` : 'เลือกเมนูและรูปแบบ ร้อน / เย็น / ปั่น'}</strong>
+          </div>
+          <button type="button" className="drink-primary drink-member-order-confirm"
+            disabled={!selectionValid || Boolean(working)}
+            onClick={() => { setOrderError(''); setOrderReviewOpen(true); }}>
+            ตรวจสอบและยืนยันออร์เดอร์ →
+          </button>
+        </div>
+      </div>}
+      {orderReviewOpen && createPortal(
+        <div className="drink-order-review-backdrop"
+          onMouseDown={event => { if (event.target === event.currentTarget && !working) setOrderReviewOpen(false); }}>
+          <section className="drink-order-review-modal" role="dialog" aria-modal="true"
+            aria-labelledby="drink-order-review-title">
+            <div className="drink-order-review-header">
+              <h2 id="drink-order-review-title">ตรวจสอบรายการก่อนยืนยัน</h2>
+              <button type="button" ref={orderReviewCloseRef}
+                aria-label="ปิดหน้าต่างตรวจสอบออร์เดอร์" className="drink-order-review-close"
+                onClick={() => setOrderReviewOpen(false)} disabled={Boolean(working)}>×</button>
+            </div>
+            <div className="drink-order-review-body">
+              <span className="drink-order-review-icon" aria-hidden="true">☕</span>
+              <strong className="drink-order-review-name">{selectedItem?.name_th || 'เครื่องดื่ม'}</strong>
+              <span>รูปแบบ {typeLabel(selection?.preparation)} · จำนวน 1 แก้ว · ใช้ 1 สิทธิ์</span>
+              {!eventLive && <p className="drink-order-review-notice" role="status">
+                ยังไม่ถึงวันเปิดรับรายการจริง (7–8 พฤศจิกายน 2569) ขณะนี้ทดลองเลือกเมนูและตรวจสอบรายการได้ แต่ยังไม่สามารถบันทึกออร์เดอร์
+              </p>}
+              {eventLive && !data?.event?.is_open && <p className="drink-order-review-notice" role="status">
+                ขณะนี้เจ้าหน้าที่ยังไม่เปิดรับออร์เดอร์ กรุณารอประกาศจากจุดบริการ
+              </p>}
+              {eventLive && data?.event?.is_open && !hasDrinkRight && <p className="drink-order-review-notice" role="status">
+                ยังไม่มีสิทธิ์สั่งเครื่องดื่ม หรือใช้สิทธิ์ครบแล้ว กรุณาติดต่อเจ้าหน้าที่
+              </p>}
+              {orderError && <p className="drink-order-review-error" role="alert">{orderError}</p>}
+              <button type="button" className="drink-primary drink-order-review-submit"
+                disabled={!maySubmit} onClick={() => fire('order', {
+                  memberId: user?.memberId, ...selection, serviceDay: day, displayConsent
+                })}>
+                {working ? 'กำลังบันทึกออร์เดอร์…' : 'ยืนยันสั่งเครื่องดื่ม 1 แก้ว'}
+              </button>
+              {!maySubmit && !working && <small>ปุ่มยืนยันจะใช้งานได้เมื่อถึงวันงาน เปิดรับรายการ และสมาชิกมีสิทธิ์คงเหลือ</small>}
+              <button type="button" className="drink-order-review-cancel"
+                onClick={() => setOrderReviewOpen(false)} disabled={Boolean(working)}>กลับไปเลือกเมนู</button>
+              {!eventLive && <a className="drink-order-review-preview" href="#public-board">
+                ดูหน้าประกาศคิว (ยังไม่สร้างออร์เดอร์) →
+              </a>}
+            </div>
+          </section>
+        </div>, document.body
+      )}
       {staffMode && <section id="drink-staff-queues" style={card}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
           <h2 style={{margin:0}}>{th?'จัดการคิว / ประวัติ':'Queues / History'}</h2>
