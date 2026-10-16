@@ -5,6 +5,18 @@ import { useQueueAudio, useQueuePolling } from './useQueueUpdates.js';
 import './drinks.css';
 
 const shortQueue = (value) => value ? String(value).split('-').pop().padStart(3, '0') : '—';
+// 05:00 AM, 7 November 2569 in Thailand (UTC+07:00), not visitor device time.
+const CAFE_OPEN_MS = Date.parse('2026-11-07T05:00:00+07:00');
+const CAFE_END_MS = Date.parse('2026-11-09T00:00:00+07:00');
+const countdownParts = ms => {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  return {
+    days: Math.floor(total / 86400),
+    hours: Math.floor((total % 86400) / 3600),
+    minutes: Math.floor((total % 3600) / 60),
+    seconds: total % 60
+  };
+};
 const PREPARATIONS = [['hot', 'ร้อน'], ['iced', 'เย็น'], ['blended', 'ปั่น']];
 const typesFor = (item) => item.preparations || (item.category === 'blended' ? ['blended'] : ['hot']);
 const typeLabel = (value) => PREPARATIONS.find(([key]) => key === value)?.[1] || '';
@@ -33,6 +45,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const [editingMenu, setEditingMenu] = useState(null);
   const [selection, setSelection] = useState(null);
   const [orderReviewOpen, setOrderReviewOpen] = useState(false);
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [orderError, setOrderError] = useState('');
   const orderReviewCloseRef = useRef(null);
   const [displayConsent, setDisplayConsent] = useState(false);
@@ -83,7 +96,10 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const choose = (member) => { setSelection(null); setTarget(member); setQuery(''); setMembers([]); };
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
   const day = data?.serviceDay || today;
-  const eventLive = Boolean(data?.event && today >= data.event.starts_on && today <= data.event.ends_on);
+  const beforeCafeOpening = clockNow < CAFE_OPEN_MS;
+  const eventLive = Boolean(data?.event && clockNow >= CAFE_OPEN_MS && clockNow < CAFE_END_MS
+    && today >= '2026-11-07' && today <= '2026-11-08');
+  const remaining = countdownParts(CAFE_OPEN_MS - clockNow);
   const canOrder = eventLive && Boolean(data?.event?.is_open) && (staffMode ? Boolean(target) : true);
   const selectedItem = menu.find(item => item.id === selection?.menuId);
   const selectionValid = Boolean(selectedItem?.active && typesFor(selectedItem).includes(selection?.preparation));
@@ -92,6 +108,11 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const showMemberDock = !staffMode && orderFirst && Boolean(data);
   useEffect(() => {
     if (!orderReviewOpen) return undefined;
+    setClockNow(Date.now());
+    const ticker = window.setInterval(() => setClockNow(Date.now()), 1000);
+    const resync = () => setClockNow(Date.now());
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('focus', resync);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const frame = window.requestAnimationFrame(() => orderReviewCloseRef.current?.focus());
@@ -103,6 +124,9 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
     document.addEventListener('keydown', keydown);
     return () => {
       document.removeEventListener('keydown', keydown);
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('focus', resync);
+      window.clearInterval(ticker);
       window.cancelAnimationFrame(frame);
       document.body.style.overflow = previousOverflow;
     };
@@ -155,7 +179,9 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
     {message && <div role="status" style={{ ...card, marginBottom: 14, background: '#fff9e9' }}>{message}</div>}
     {!data ? <div style={card}>{th ? 'กำลังโหลด...' : 'Loading...'}</div> : <>
       {!data.event.is_open && <div style={{ ...card, marginBottom: 14, background: '#f5f0e8' }}>{th ? 'ขณะนี้ปิดรับรายการเครื่องดื่มแล้ว' : 'Drink ordering is closed.'}</div>}
-      {data.event.is_open && !eventLive && <div style={{ ...card, marginBottom: 14, background: '#fff9e9' }}>{th ? `ช่วงเปิดรับรายการ: ${formatServiceDay(data.event.starts_on, th)} – ${formatServiceDay(data.event.ends_on, th)}` : `Ordering period: ${formatServiceDay(data.event.starts_on, th)} – ${formatServiceDay(data.event.ends_on, th)}`}</div>}
+      {data.event.is_open && !eventLive && <div style={{ ...card, marginBottom: 14, background: '#fff9e9' }}>{th
+        ? 'Nathoeng Cafe เปิดบริการวันที่ 7 พฤศจิกายน 2569 เวลา 05:00 น. ถึงวันที่ 8 พฤศจิกายน 2569'
+        : 'Nathoeng Cafe opens at 05:00 on 7 November 2026 (Thailand time) and serves through 8 November.'}</div>}
       {staffMode && <section id="drink-staff-members" style={{ ...card, marginBottom: 16 }}>
         <h2 style={{ marginTop: 0 }}>{th ? 'ค้นหาสมาชิกเพื่อช่วยสั่งหรือออกสิทธิ์' : 'Find a member'}</h2>
         <input value={query} onChange={(e) => { setQuery(e.target.value); setTarget(null); }} placeholder={th ? 'พิมพ์ชื่อสมาชิกอย่างน้อย 2 ตัวอักษร' : 'Search member name'} style={{ width: '100%', boxSizing: 'border-box', padding: 12, border: '1px solid #d9cfbf', borderRadius: 10, fontSize: 16 }} />
@@ -217,7 +243,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
            </button>}
            {!staffMode && !orderFirst && <button type="button" className="drink-primary"
              disabled={!selectionValid || Boolean(working)}
-             onClick={() => { setOrderError(''); setOrderReviewOpen(true); }}>ตรวจสอบและยืนยันออร์เดอร์ →</button>}
+             onClick={() => { setOrderError(''); setClockNow(Date.now()); setOrderReviewOpen(true); }}>ตรวจสอบและยืนยันออร์เดอร์ →</button>}
          </div>
       </section>
       {showMemberDock && <div className="drink-member-order-dock" role="region" aria-label="เครื่องดื่มที่เลือกและการยืนยัน">
@@ -228,7 +254,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           </div>
           <button type="button" className="drink-primary drink-member-order-confirm"
             disabled={!selectionValid || Boolean(working)}
-            onClick={() => { setOrderError(''); setOrderReviewOpen(true); }}>
+            onClick={() => { setOrderError(''); setClockNow(Date.now()); setOrderReviewOpen(true); }}>
             ตรวจสอบและยืนยันออร์เดอร์ →
           </button>
         </div>
@@ -245,11 +271,29 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
                 onClick={() => setOrderReviewOpen(false)} disabled={Boolean(working)}>×</button>
             </div>
             <div className="drink-order-review-body">
+              {beforeCafeOpening && <div className="drink-cafe-countdown" role="timer" aria-label="นับถอยหลังจนถึงเวลาเปิด Nathoeng Cafe">
+                <strong className="drink-cafe-countdown-headline">เครื่องดื่ม Nathoeng Cafe จะเปิดให้บริการ</strong>
+                <div className="drink-cafe-countdown-numbers" aria-hidden="true">
+                  {[
+                    { num: remaining.days, title: 'วัน' },
+                    { num: remaining.hours, title: 'ชั่วโมง' },
+                    { num: remaining.minutes, title: 'นาที' },
+                    { num: remaining.seconds, title: 'วินาที' }
+                  ].map(part => <div className="drink-cafe-countdown-unit" key={part.title}>
+                    <strong>{String(part.num).padStart(2, '0')}</strong>
+                    <span>{part.title}</span>
+                  </div>)}
+                </div>
+                <span className="drink-cafe-countdown-opening">เปิดบริการ 7 พฤศจิกายน 2569 เวลา 05:00 น. (ประเทศไทย)</span>
+              </div>}
               <span className="drink-order-review-icon" aria-hidden="true">☕</span>
               <strong className="drink-order-review-name">{selectedItem?.name_th || 'เครื่องดื่ม'}</strong>
               <span>รูปแบบ {typeLabel(selection?.preparation)} · จำนวน 1 แก้ว · ใช้ 1 สิทธิ์</span>
-              {!eventLive && <p className="drink-order-review-notice" role="status">
-                ยังไม่ถึงวันเปิดรับรายการจริง (7–8 พฤศจิกายน 2569) ขณะนี้ทดลองเลือกเมนูและตรวจสอบรายการได้ แต่ยังไม่สามารถบันทึกออร์เดอร์
+              {beforeCafeOpening && <p className="drink-order-review-notice" role="status">
+                สามารถทดลองเลือกเครื่องดื่มได้ แต่ยังไม่สามารถยืนยันออร์เดอร์ก่อนเวลาเปิดบริการจริง
+              </p>}
+              {!beforeCafeOpening && !eventLive && <p className="drink-order-review-notice" role="status">
+                ขณะนี้อยู่นอกช่วงเปิดบริการ Nathoeng Cafe วันที่ 7–8 พฤศจิกายน 2569
               </p>}
               {eventLive && !data?.event?.is_open && <p className="drink-order-review-notice" role="status">
                 ขณะนี้เจ้าหน้าที่ยังไม่เปิดรับออร์เดอร์ กรุณารอประกาศจากจุดบริการ
@@ -267,7 +311,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
               {!maySubmit && !working && <small>ปุ่มยืนยันจะใช้งานได้เมื่อถึงวันงาน เปิดรับรายการ และสมาชิกมีสิทธิ์คงเหลือ</small>}
               <button type="button" className="drink-order-review-cancel"
                 onClick={() => setOrderReviewOpen(false)} disabled={Boolean(working)}>กลับไปเลือกเมนู</button>
-              {!eventLive && <a className="drink-order-review-preview" href="#public-board">
+              {beforeCafeOpening && <a className="drink-order-review-preview" href="#public-board">
                 ดูหน้าประกาศคิว (ยังไม่สร้างออร์เดอร์) →
               </a>}
             </div>
