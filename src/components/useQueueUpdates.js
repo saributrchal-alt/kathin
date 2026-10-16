@@ -89,7 +89,9 @@ export function useQueueAudio(data, staffMode) {
     }
     const calls = staffMode
       ? (data.currentCall?.status === 'accepted' ? [{ id: data.currentCall.orderId, accepted_at: data.currentCall.calledAt }] : [])
-      : (data.orders || []).filter(o => o.service_day === data.serviceDay && o.status === 'accepted' && o.accepted_at);
+      : (data.orders || []).filter(o => o.service_day === data.serviceDay &&
+          (o.status === 'accepted' || o.status === 'ready') && (o.ready_at || o.accepted_at))
+        .map(o => ({ ...o, accepted_at: o.ready_at || o.accepted_at }));
     const active = new Set(calls.map(o => `${o.id}:${o.accepted_at}`));
     for (const key of s.pending.keys()) if (!active.has(key)) s.pending.delete(key);
     for (const key of active) if (!s.heard.has(key)) s.pending.set(key, true);
