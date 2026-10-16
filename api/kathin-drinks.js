@@ -201,7 +201,7 @@ export default async function handler(req, res) {
       const preparations = body.preparations || (category === 'blended' ? ['blended'] : ['hot']);
       if (!Array.isArray(preparations) || !preparations.length || preparations.length > 3 || preparations.some((p) => !['hot', 'iced', 'blended'].includes(p)) || !name || name.length > 100 || !['drip', 'blended'].includes(category)
           || (existingId && !/^[\w-]{1,80}$/.test(existingId))
-          || (imageUrl && !/^https:\/\/media\.nathoeng\.com\/uploads\/temple\/[0-9]{4}\/[0-9]{2}\/[a-f0-9]{32}\.webp$/.test(imageUrl))
+          || (imageUrl && !(/^(?:https:\/\/media\.nathoeng\.com\/uploads\/temple\/[0-9]{4}\/[0-9]{2}\/[a-f0-9]{32}\.webp|https:\/\/media\.nathoeng\.com\/uploads\/kathin\/drinks\/[0-9]{2}-[a-z0-9-]+\.png)$/.test(imageUrl)))
           || !Number.isInteger(Number(body.sort_order)) || Number(body.sort_order) < 0 || Number(body.sort_order) > 9999
           || typeof body.active !== 'boolean') return send(res, 400, { success: false, message: 'กรุณาตรวจชื่อ ประเภท รูปภาพ และลำดับเมนู' });
       const item = { name_th: name, name_en: String(body.name_en || name).trim().slice(0, 100),
