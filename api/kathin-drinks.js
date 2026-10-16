@@ -247,6 +247,14 @@ export default async function handler(req, res) {
       return send(res, 200, { success: true, result, warning });
     }
     if (action === 'order') {
+      // Server gate: UI clocks can be altered, but a member order must not
+      // be accepted before Nathoeng Cafe opens at 05:00 Asia/Bangkok.
+      if (Date.now() < Date.parse('2026-11-07T05:00:00+07:00')) {
+        return send(res, 403, {
+          success: false,
+          message: 'Nathoeng Cafe จะเปิดให้บริการวันที่ 7 พฤศจิกายน 2569 เวลา 05:00 น. (เวลาประเทศไทย)'
+        });
+      }
       if (!/^(drip|blend)-/.test(String(body.menuId || ''))) return send(res, 400, { success: false, message: 'กรุณาเลือกเมนู' });
       const day = String(body.serviceDay || '');
       if (!['hot', 'iced', 'blended'].includes(body.preparation)) return send(res, 400, { success: false, message: 'กรุณาเลือก ร้อน เย็น หรือปั่น' });
