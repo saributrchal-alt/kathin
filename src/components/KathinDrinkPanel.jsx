@@ -82,11 +82,12 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const eventLive = Boolean(data?.event && today >= data.event.starts_on && today <= data.event.ends_on);
   const canOrder = eventLive && Boolean(data?.event?.is_open) && (staffMode ? Boolean(target) : true);
   const orders = data?.orders || [];
-  const activeOrders = orders.filter(o => o.service_day === day && ['pending', 'accepted', 'ready'].includes(o.status));
+  const activeOrders = orders.filter(o => o.service_day === day && ['pending', 'preparing', 'accepted', 'ready'].includes(o.status));
   const todayOrders = orders.filter(o => o.service_day === day);
   const queueTabs = [
     { status:'pending', label:th?'ออร์เดอร์':'Orders', time:'created_at' },
-    { status:'accepted', label:th?'กำลังเตรียม':'Preparing', time:'accepted_at' },
+    { status:'preparing', label:th?'กำลังเตรียม':'Preparing', time:'accepted_at' },
+    { status:'accepted', label:th?'เรียกรับเดิม':'Legacy Called', time:'accepted_at' },
     { status:'ready', label:th?'พร้อมรับ':'Ready', time:'ready_at' },
     { status:'sent', label:th?'รับแล้ว':'Collected', time:'sent_at' }
   ];
@@ -155,7 +156,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             {activeOrders.map((order, index) => <div key={order.id} style={{ marginTop: index ? 20 : 0, borderTop: index ? '1px solid #e6cc91' : undefined, paddingTop: index ? 16 : 0 }}>
               <b style={{ display: 'block', color: '#573b11', fontSize: 'clamp(48px, 14vw, 112px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{shortQueue(order.queue_number)}</b>
               <div style={{ marginTop: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id}{order.preparation && ` · ${typeLabel(order.preparation)}`}</div>
-              {order.status === 'ready' ? <div className="drink-ready" role="status">{th ? 'เครื่องดื่มพร้อมรับแล้ว' : 'Your drink is ready'}</div> : order.status === 'accepted' ? <small style={{display:'block',marginTop:6}}>{th ? 'กำลังเตรียมเครื่องดื่ม' : 'Preparing your drink'}</small> : <small style={{ display: 'block', marginTop: 6 }}>{th ? 'รอเรียกรับเครื่องดื่ม' : 'Waiting to be called'}</small>}
+              {order.status === 'ready' ? <div className="drink-ready" role="status">{th ? 'เครื่องดื่มพร้อมรับแล้ว' : 'Your drink is ready'}</div> : order.status === 'accepted' ? <small style={{display:'block',marginTop:6}}>{th ? 'เรียกคิวแล้ว / กำลังเตรียม' : 'Called / preparing'}</small> : <small style={{ display: 'block', marginTop: 6 }}>{order.status === 'preparing' ? (th ? 'กำลังเตรียมเครื่องดื่ม' : 'Preparing your drink') : (th ? 'รอเรียกรับเครื่องดื่ม' : 'Waiting to be called')}</small>}
             </div>)}
             {!activeOrders.length && <><b style={{ display: 'block', fontSize: 'clamp(48px, 14vw, 112px)', lineHeight: 1.1, color: '#573b11' }}>—</b><small style={{ display: 'block', marginTop: 12 }}>{th ? 'ไม่มีคิวที่รอรับเครื่องดื่ม' : 'No drinks waiting for collection'}</small></>}
           </div>}
@@ -188,7 +189,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           <h2 style={{margin:0}}>{th?'จัดการคิว / ประวัติ':'Queues / History'}</h2>
           <button type="button" onClick={()=>load().catch(error=>setMessage(error.message))} style={{...button,background:'#eee8dd',color:'#514838'}}>{th?'รีเฟรชรายการ':'Refresh list'}</button>
         </div>
-        <div role="tablist" aria-label={th?'สถานะรายการเครื่องดื่ม':'Drink order status'} style={{display:'grid',gridTemplateColumns:'repeat(4,minmax(0,1fr))',gap:6,marginTop:16}}>
+        <div role="tablist" aria-label={th?'สถานะรายการเครื่องดื่ม':'Drink order status'} style={{display:'grid',gridTemplateColumns:'repeat(5,minmax(0,1fr))',gap:6,marginTop:16}}>
           {queueTabs.map(tab=><button key={tab.status} type="button" role="tab" id={`drink-queue-tab-${tab.status}`} aria-controls="drink-queue-history" aria-selected={queueStatus===tab.status} tabIndex={queueStatus===tab.status?0:-1}
             onClick={()=>setQueueStatus(tab.status)} onKeyDown={selectQueueTabByKey}
             style={{...button,padding:'12px 6px',minWidth:0,background:queueStatus===tab.status?'#376b4d':'#f0ece5',color:queueStatus===tab.status?'#fff':'#514838'}}>
