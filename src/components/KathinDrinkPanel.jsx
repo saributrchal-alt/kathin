@@ -21,7 +21,7 @@ function printDrinkMenu(menu) {
   popup.print();
 }
 
-export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false, onClose, onAccessChange }) {
+export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false, orderFirst = false, onOrderPlaced, onClose, onAccessChange }) {
   const th = lang !== 'en';
   const [data, setData] = useState(null);
   const [working, setWorking] = useState('');
@@ -67,7 +67,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       const response = await fetch('/api/kathin-drinks', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...values }) });
       const body = await response.json();
       if (!response.ok || !body.success) throw new Error(body.message || 'บันทึกไม่สำเร็จ');
-      if (action === 'order') { setDisplayConsent(false); setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${shortQueue(body.order.queue_number)}`); setSelection(null); }
+      if (action === 'order') { setDisplayConsent(false); setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${shortQueue(body.order.queue_number)}`); setSelection(null); if (!staffMode) onOrderPlaced?.(body.order); }
       else setMessage(body.warning || (action === 'recall' ? (th ? 'เรียกเสียงซ้ำแล้ว' : 'Called again') : action === 'transition' && values.status === 'accepted'
         ? (th ? `เรียกรับคิว ${shortQueue(body.order.queue_number)} แล้ว${body.notification?.status === 'sent' ? ' · แจ้ง LINE แล้ว' : ''}` : 'Queue called')
         : (th ? 'บันทึกเรียบร้อย' : 'Saved')));
@@ -136,7 +136,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
         {members.length > 0 && query.trim().length >= 2 && <div style={{ display: 'grid', gap: 6, marginTop: 8 }}>{members.map((m) => <button key={m.id} onClick={() => choose(m)} style={{ textAlign: 'left', padding: 11, borderRadius: 9, border: '1px solid #e6dece', background: '#fff', cursor: 'pointer' }}>{m.name}</button>)}</div>}
         {target && <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10, marginTop: 12 }}><strong>{target.name}</strong><button style={{ ...button, background: '#8b6531' }} disabled={Boolean(working)} onClick={() => fire('grant', { memberId: target.id })}>{th ? 'ออกสิทธิ์ฟรีเพิ่ม 1 แก้ว' : 'Grant one free drink'}</button>{data?.admin && <><button style={{ ...button, background: '#4d6582' }} disabled={Boolean(working)} onClick={() => fire('assign-staff', { memberId: target.id })}>{th ? 'กำหนดเป็น Staff' : 'Assign Staff'}</button><button style={{ ...button, background: '#eee8dd', color: '#514838' }} disabled={Boolean(working)} onClick={() => fire('remove-staff', { memberId: target.id })}>{th ? 'ถอนสิทธิ์ Staff' : 'Remove Staff'}</button></>}</div>}
       </section>}
-      <section style={{ ...card, marginBottom: 16 }} aria-label={th ? 'คิวเครื่องดื่มวันนี้' : 'Today’s drink queues'}>
+      {!orderFirst && <section style={{ ...card, marginBottom: 16 }} aria-label={th ? 'คิวเครื่องดื่มวันนี้' : 'Today’s drink queues'}>
         <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <div><strong style={{ fontSize: 18 }}>{th ? 'คิวเครื่องดื่มวันนี้' : 'Today’s drink queues'}</strong><small style={{ display: 'block', marginTop: 4 }}>{formatServiceDay(day, th)}{!staffMode && (th ? ` · เหลือ ${data.availableRights || 0} สิทธิ์` : ` · ${data.availableRights || 0} rights left`)}</small></div>
           <button style={{ ...button, background: '#eee8dd', color: '#514838' }} onClick={() => load().catch((e) => setMessage(e.message))}>{th ? 'อัปเดตคิว' : 'Refresh queue'}</button>
@@ -165,7 +165,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           <summary style={{ cursor: 'pointer', padding: '10px 0' }}>{th ? 'ดูรายการวันก่อน' : 'Previous orders'}</summary>
           {orders.filter((order) => order.service_day !== day).map((order) => <div key={order.id} style={{ padding: '10px 0', borderTop: '1px solid #eee8dd' }}><strong>{shortQueue(order.queue_number)}</strong> · {menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id} · {formatServiceDay(order.service_day, th)}</div>)}
         </details>}
-      </section>
+      </section>}
       <section className="drink-check-menu" style={{ marginBottom: 24 }}>
         <h2>เลือกเครื่องดื่ม</h2><p className="drink-check-intro">ติ๊กเมนูและรูปแบบที่ต้องการ · 1 สิทธิ์ต่อ 1 แก้ว</p>
         <div role="radiogroup" aria-label="เลือกเครื่องดื่มและรูปแบบ">
