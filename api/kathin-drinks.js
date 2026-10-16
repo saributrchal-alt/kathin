@@ -82,8 +82,9 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const action = String(req.query?.view || 'member');
-      if (action === 'board') {
-        if (!canServe) return send(res, 403, { success: false, message: 'เฉพาะเจ้าหน้าที่งานกฐิน' });
+      if (action === 'board' || action === 'public-board') {
+        const publicBoard = action === 'public-board';
+        if (!publicBoard && !canServe) return send(res, 403, { success: false, message: 'เฉพาะเจ้าหน้าที่งานกฐิน' });
         const serviceDay = String(req.query?.day || '');
         if (!['2026-11-07', '2026-11-08'].includes(serviceDay))
           return send(res, 400, { success: false, message: 'กรุณาเลือกวันจัดงานกฐิน' });
@@ -93,7 +94,14 @@ export default async function handler(req, res) {
           lookup(base, key, 'kathin_drink_orders',
             'event_key=eq.' + EVENT + '&service_day=eq.' + serviceDay + '&select=id,member_id,queue_number,queue_seq,menu_id,status,created_at,accepted_at,ready_at,sent_at,display_hidden_at,display_consent&order=queue_seq.asc&limit=500')
         ]);
-        const orders = orderRows || [];
+        // Guests only receive active, visible queue items; staff retains
+        // complete day records. No member IDs or private profile data leave
+        // the API, and opt-in is required for public names/photos.
+        const orders = publicBoard
+          ? (orderRows || []).filter(o =>
+              ['pending','preparing','accepted','ready'].includes(o.status) &&
+              !(o.status === 'ready' && o.display_hidden_at))
+          : (orderRows || []);
         const ids = [...new Set(orders.filter(o => o.display_consent).map(o => String(o.member_id)))];
         let profiles = new Map();
         if (ids.length) {
@@ -116,7 +124,7 @@ export default async function handler(req, res) {
         };
         return send(res, 200, {
           success: true, event: eventRows?.[0] || null,
-          serviceDay, staff: true, admin, updatedAt: new Date().toISOString(),
+          serviceDay, ...(publicBoard ? {} : { staff: true, admin }), updatedAt: new Date().toISOString(),
           orders: orders.map(o => {
             const m = o.display_consent ? profiles.get(String(o.member_id)) : null;
             return {
