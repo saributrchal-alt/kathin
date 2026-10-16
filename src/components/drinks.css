@@ -3,3 +3,169 @@
 
 
 .drink-ready{display:inline-block;margin-top:10px;padding:9px 16px;border:2px solid #b42329;border-radius:10px;background:#fff0f0;color:#b42329;font-size:20px;font-weight:900}.drink-sound-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:16px}.drink-sound-controls small{color:#6d6252;line-height:1.5}
+
+
+/* Member order flow: visible confirmation bar even on a long drink menu. */
+.drink-member-order-dock {
+  position: fixed;
+  bottom: 0;
+  inset-inline: 0;
+  z-index: 40;
+  padding: 12px max(12px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  box-sizing: border-box;
+  border-top: 1px solid #ded3b8;
+  background: #fffcf3f2;
+  box-shadow: 0 -7px 28px rgba(62,48,25,.16);
+  backdrop-filter: blur(8px);
+}
+.drink-member-order-dock-inner {
+  max-width: 930px;
+  margin: auto;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.drink-member-order-dock-selection {
+  display: grid;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.drink-member-order-dock-selection small {
+  font-size: 12px;
+  color: #857044;
+  font-weight: 700;
+}
+.drink-member-order-dock-selection strong {
+  font-size: 16px;
+  color: #2e5840;
+  overflow-wrap: anywhere;
+}
+.drink-member-order-confirm {
+  flex-shrink: 0;
+  min-height: 52px;
+  box-shadow: 0 4px 13px #153d2629;
+}
+.drink-order-review-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 18px;
+  box-sizing: border-box;
+  background: rgba(20, 30, 23, .67);
+}
+.drink-order-review-modal {
+  width: min(100%, 475px);
+  max-height: calc(100dvh - 36px);
+  overflow-y: auto;
+  border-radius: 21px;
+  padding: 0;
+  border: 1px solid #e9dbbb;
+  background: #fffdf7;
+  box-shadow: 0 25px 85px #0005;
+  color: #2f4e3c;
+}
+.drink-order-review-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 18px;
+  border-bottom: 1px solid #e8e1d0;
+}
+.drink-order-review-header h2 { margin: 0; font-size: 22px; }
+.drink-order-review-close {
+  width: 43px;
+  height: 43px;
+  border: 1px solid #d6d5c9;
+  border-radius: 50%;
+  background: #fff;
+  font-size: 29px;
+  color: #45634c;
+  line-height: 1;
+  cursor: pointer;
+}
+.drink-order-review-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  text-align: center;
+  padding: 23px 21px 25px;
+}
+.drink-order-review-icon {
+  font-size: 51px;
+  background: #edf3e9;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  width: 83px;
+  height: 83px;
+}
+.drink-order-review-name {
+  font-size: 23px;
+  line-height: 1.4;
+  color: #22533c;
+  overflow-wrap: anywhere;
+}
+.drink-order-review-body > span:not(.drink-order-review-icon) { color: #826b45; }
+.drink-order-review-notice {
+  margin: 0;
+  width: 100%;
+  border-radius: 12px;
+  padding: 13px 12px;
+  border: 1px solid #e8d1a1;
+  background: #fff5dc;
+  color: #805b22;
+  font-size: 14px;
+  line-height: 1.7;
+  box-sizing: border-box;
+}
+.drink-order-review-error {
+  margin: 0;
+  border: 1px solid #ddaaa0;
+  background: #fff0ec;
+  color: #953e30;
+  padding: 12px;
+  border-radius: 12px;
+  width: 100%;
+}
+.drink-order-review-submit { width: 100%; min-height: 53px; font-size: 16px; }
+.drink-order-review-body small { color: #807864; font-size: 12px; line-height: 1.6; }
+.drink-order-review-cancel {
+  min-height: 45px;
+  border: 1px solid #d9ddcd;
+  border-radius: 10px;
+  color: #465f50;
+  background: #f7f9f2;
+  width: 100%;
+  font-weight: 700;
+  cursor: pointer;
+}
+.drink-order-review-preview {
+  color: #2d7451;
+  font-size: 13px;
+  font-weight: 750;
+  padding: 5px;
+}
+.drink-order-review-close:focus-visible,
+.drink-order-review-cancel:focus-visible,
+.drink-member-order-confirm:focus-visible {
+  outline: 3px solid #b58a31;
+  outline-offset: 3px;
+}
+@media(max-width:600px) {
+  .drink-member-order-dock { padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); }
+  .drink-member-order-dock-inner { gap: 9px; }
+  .drink-member-order-dock-selection small { font-size: 10px; }
+  .drink-member-order-dock-selection strong { font-size: 12px; }
+  .drink-member-order-confirm { padding: 12px 10px; font-size: 12px; max-width: 49%; }
+  .drink-order-review-backdrop { padding: 9px; align-items: flex-end; }
+  .drink-order-review-modal { max-height: calc(100dvh - 12px); border-radius: 21px 21px 0 0; }
+  .drink-order-review-header h2 { font-size: 19px; }
+  .drink-order-review-body { padding: 17px 16px calc(21px + env(safe-area-inset-bottom, 0px)); }
+}
