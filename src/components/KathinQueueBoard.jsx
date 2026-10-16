@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import './KathinQueueBoard.css';
+import { useQueueAudio } from './useQueueUpdates.js';
 
 const DAYS = [
   { value: '2026-11-07', label: 'เสาร์ 7 พฤศจิกายน 2569' },
@@ -51,7 +52,6 @@ export default function KathinQueueBoard({ onClose }) {
   const [displayOnly, setDisplayOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [showHidden, setShowHidden] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -93,6 +93,19 @@ export default function KathinQueueBoard({ onClose }) {
   const readyPage = page % readyPageCount;
   const visibleReady = ready.slice(readyPage * 8, readyPage * 8 + 8);
   const latestReadyId = calling?.id;
+  // Reuse the existing one-shot chime and per-day deduplication for the
+  // most recently ready drink. Actual status 'ready' is not an early call.
+  const soundQueue = useMemo(() => ({
+    viewerId: 'kathin-staff-board',
+    serviceDay: day,
+    currentCall: calling ? {
+      orderId: calling.id,
+      queueNumber: calling.queue_number,
+      calledAt: calling.ready_at,
+      status: 'accepted'
+    } : null
+  }), [calling, day]);
+  const { sound, enableSound } = useQueueAudio(soundQueue, true);
 
   const update = async (operation) => {
     if (!selected || working) return;
@@ -137,6 +150,7 @@ export default function KathinQueueBoard({ onClose }) {
         {DAYS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
       </select></label>
       <button onClick={() => refresh()}>↻ รีเฟรช</button>
+      <button type="button" onClick={enableSound}>♫ {sound === 'ready' ? 'ทดสอบเสียงเรียกคิว' : 'เปิดเสียงเรียกคิว'}</button>
       <button onClick={() => {setDisplayOnly(true);setSelected(null);}}>▣ จอประกาศอย่างเดียว</button>
       <button onClick={onClose}>← กลับหน้าจัดการเดิม</button>
     </nav>}
