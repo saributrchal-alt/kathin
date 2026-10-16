@@ -8,9 +8,11 @@ const DAYS = [
 const todayInThailand = () =>
   new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
 const startDay = () => todayInThailand() === '2026-11-08' ? '2026-11-08' : '2026-11-07';
+const shortQueue = value => value ? String(value).split('-').pop().padStart(3, '0') : '—';
 const operations = {
   pending: [{ action: 'accept', label: 'เริ่มเตรียมเครื่องดื่ม', tone: 'blue' }],
   accepted: [{ action: 'ready', label: 'ชงเสร็จ · พร้อมให้มารับและเรียกคิว', tone: 'green' }],
+  preparing: [{ action: 'ready', label: 'ชงเสร็จ · พร้อมให้มารับและเรียกคิว', tone: 'green' }],
   ready: [
     { action: 'picked', label: 'เจ้าของรับเครื่องดื่มแล้ว', tone: 'green' },
     { action: 'hide', label: 'ซ่อนคิวจากจอ (ยังไม่รับ)', tone: 'muted' }
@@ -31,7 +33,7 @@ function QueueCard({ order, onClick, large = false, badge }) {
     onClick={() => onClick(order)} aria-label={'จัดการคิว ' + order.queue_number}>
     <Person order={order} />
     <span className="kboard-q-info">
-      <strong>{order.queue_number}</strong>
+      <strong>{shortQueue(order.queue_number)}</strong>
       <span className="kboard-owner">{order.member_name}</span>
       <small>{order.menu_name}</small>
     </span>
@@ -80,7 +82,7 @@ export default function KathinQueueBoard({ onClose }) {
   const orders = data?.orders || [];
   const ready = useMemo(() => orders.filter(o => o.status === 'ready' && !o.hidden), [orders]);
   const hidden = useMemo(() => orders.filter(o => o.status === 'ready' && o.hidden), [orders]);
-  const preparing = useMemo(() => orders.filter(o => o.status === 'accepted'), [orders]);
+  const preparing = useMemo(() => orders.filter(o => o.status === 'preparing' || o.status === 'accepted'), [orders]);
   const waiting = useMemo(() => orders.filter(o => o.status === 'pending'), [orders]);
   const calling = useMemo(() =>
     [...ready].sort((a, b) => {
@@ -147,7 +149,7 @@ export default function KathinQueueBoard({ onClose }) {
         <div className="kboard-pill">☕ กำลังเรียกคิว · พร้อมรับ</div>
         {calling ? <>
           <Person order={calling} size="large" />
-          <div className="kboard-featured-number">{calling.queue_number}</div>
+          <div className="kboard-featured-number">{shortQueue(calling.queue_number)}</div>
           <h1>{calling.member_name}</h1>
           <p>{calling.menu_name}</p>
           <div className="kboard-featured-prompt">กรุณามารับที่เคาน์เตอร์</div>
@@ -204,7 +206,7 @@ export default function KathinQueueBoard({ onClose }) {
       onMouseDown={e => { if (e.target === e.currentTarget && !working) setSelected(null); }}>
       <section role="dialog" aria-modal="true" aria-label={'จัดการคิว ' + selected.queue_number} className="kboard-modal">
         <span className="kboard-modal-kicker">STAFF · จัดการคิว</span>
-        <div className="kboard-modal-number">{selected.queue_number}</div>
+        <div className="kboard-modal-number">{shortQueue(selected.queue_number)}</div>
         <h2>{selected.member_name}</h2>
         <p>{selected.menu_name}</p>
         <div className="kboard-modal-buttons">
