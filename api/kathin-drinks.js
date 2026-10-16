@@ -82,6 +82,55 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const action = String(req.query?.view || 'member');
+      if (action === 'board') {
+        if (!canServe) return send(res, 403, { success: false, message: 'เฉพาะเจ้าหน้าที่งานกฐิน' });
+        const serviceDay = String(req.query?.day || '');
+        if (!['2026-11-07', '2026-11-08'].includes(serviceDay))
+          return send(res, 400, { success: false, message: 'กรุณาเลือกวันจัดงานกฐิน' });
+        const [eventRows, menuRows, orderRows] = await Promise.all([
+          lookup(base, key, 'kathin_drink_event', 'event_key=eq.' + EVENT + '&select=event_key,is_open,starts_on,ends_on'),
+          lookup(base, key, 'kathin_drink_menu', 'select=id,name_th,category'),
+          lookup(base, key, 'kathin_drink_orders',
+            'event_key=eq.' + EVENT + '&service_day=eq.' + serviceDay + '&select=id,member_id,queue_number,queue_seq,menu_id,status,created_at,accepted_at,ready_at,sent_at,display_hidden_at,display_consent&order=queue_seq.asc&limit=500')
+        ]);
+        const orders = orderRows || [];
+        const ids = [...new Set(orders.filter(o => o.display_consent).map(o => String(o.member_id)))];
+        let profiles = new Map();
+        if (ids.length) {
+          const filter = '(' + ids.map(id => '"' + id.replaceAll('"', '') + '"').join(',') + ')';
+          const members = await lookup(base, key, 'members',
+            'id=in.' + encodeURIComponent(filter) + '&select=id,full_name,display_name,picture_url,profile_image_url');
+          profiles = new Map((members || []).map(m => [String(m.id), m]));
+        }
+        const menuMap = new Map((menuRows || []).map(m => [String(m.id), m.name_th]));
+        const publicPhoto = value => {
+          if (typeof value !== 'string' || value.length > 1600) return null;
+          try {
+            const u = new URL(value);
+            if (u.protocol !== 'https:') return null;
+            if (u.username || u.password) return null;
+            if (u.hostname === 'watt.nathoeng.com' || u.hostname === 'kathin.nathoeng.com') return null;
+            if (/\/(?:api\/|private|protected)\b/i.test(u.pathname)) return null;
+            return u.href;
+          } catch { return null; }
+        };
+        return send(res, 200, {
+          success: true, event: eventRows?.[0] || null,
+          serviceDay, staff: true, admin, updatedAt: new Date().toISOString(),
+          orders: orders.map(o => {
+            const m = o.display_consent ? profiles.get(String(o.member_id)) : null;
+            return {
+              id: o.id, queue_number: o.queue_number, queue_seq: o.queue_seq,
+              status: o.status,
+              menu_name: menuMap.get(String(o.menu_id)) || 'เครื่องดื่ม',
+              accepted_at: o.accepted_at, ready_at: o.ready_at, sent_at: o.sent_at,
+              hidden: Boolean(o.display_hidden_at),
+              member_name: m ? (m.display_name || m.full_name || 'สมาชิก') : 'ผู้ร่วมงาน',
+              member_photo: m ? publicPhoto(m.profile_image_url) || publicPhoto(m.picture_url) : null
+            };
+          })
+        });
+      }
       if (action === 'lookup') {
         if (!canServe) return send(res, 403, { success: false, message: 'ต้องได้รับสิทธิ์ Staff งานกฐินก่อน' });
         const term = String(req.query?.q || '').trim().slice(0, 80);
@@ -160,6 +209,35 @@ export default async function handler(req, res) {
       }
       return send(res, 200, { success: true });
     }
+    if (action === 'board-action') {
+      if (!canServe) return send(res, 403, { success: false, message: 'เฉพาะเจ้าหน้าที่งานกฐิน' });
+      const orderId = Number(body.orderId);
+      const operation = String(body.operation || '');
+      if (!Number.isSafeInteger(orderId) || orderId < 1 ||
+          !['accept', 'ready', 'picked', 'hide', 'show'].includes(operation))
+        return send(res, 400, { success: false, message: 'ข้อมูลคำสั่งคิวไม่ถูกต้อง' });
+      const result = await rest(base, key, 'rpc/kathin_drink_board_action', '', {
+        method: 'POST',
+        body: JSON.stringify({ p_order_id: orderId, p_action: operation, p_actor_id: actorId })
+      });
+      // Auto-promoted queue is now in the existing 'accepted' (called) state:
+      // send the same member notification as the legacy Staff action.
+      let warning;
+      if (operation === 'ready' && result?.promoted_order_id) {
+        try {
+          const promoted = (await lookup(base, key, 'kathin_drink_orders',
+            'id=eq.' + Number(result.promoted_order_id) + '&select=*'))?.[0];
+          if (promoted) {
+            const notice = await notifyQueueCall(promoted, actorId);
+            if (notice?.status === 'failed') warning = 'เลื่อนคิวถัดไปแล้ว แต่แจ้ง LINE ไม่สำเร็จ';
+          }
+        } catch (noticeError) {
+          console.warn('Auto-promoted queue notification failed:', noticeError);
+          warning = 'เลื่อนคิวถัดไปแล้ว แต่แจ้ง LINE ไม่สำเร็จ';
+        }
+      }
+      return send(res, 200, { success: true, result, warning });
+    }
     if (action === 'order') {
       if (!/^(drip|blend)-/.test(String(body.menuId || ''))) return send(res, 400, { success: false, message: 'กรุณาเลือกเมนู' });
       const day = String(body.serviceDay || '');
@@ -167,6 +245,12 @@ export default async function handler(req, res) {
       const result = await rest(base, key, 'rpc/place_kathin_drink_choice', '', {
         method: 'POST', body: JSON.stringify({ p_actor_id: actorId, p_member_id: String(body.memberId || actorId), p_menu_id: String(body.menuId), p_service_day: day, p_preparation: body.preparation })
       });
+      if (body.displayConsent === true && String(body.memberId || actorId) === actorId && Number.isSafeInteger(Number(result?.id))) {
+        await rest(base, key, 'kathin_drink_orders',
+          'id=eq.' + Number(result.id) + '&member_id=eq.' + encodeURIComponent(actorId),
+          { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ display_consent: true }) });
+      }
       return send(res, 200, { success: true, order: result });
     }
     if (action === 'transition' || action === 'recall') {
@@ -217,7 +301,7 @@ export default async function handler(req, res) {
     return send(res, 400, { success: false, message: 'ไม่รู้จักคำสั่งนี้' });
   } catch (error) {
     const message = String(error?.message || 'ดำเนินการไม่สำเร็จ');
-    const status = /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /INVALID_MENU|INVALID_SERVICE_DAY|INVALID_PREPARATION/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
+    const status = /QUEUE_STATE_CONFLICT/.test(message) ? 409 : /QUEUE_NOT_FOUND/.test(message) ? 404 : /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /INVALID_MENU|INVALID_SERVICE_DAY|INVALID_PREPARATION/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
     return send(res, status, { success: false, message: ({ NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'ขณะนี้อยู่นอกช่วงวันที่เปิดรับออร์เดอร์', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้' })[message] || message });
   }
 }
