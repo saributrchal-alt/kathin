@@ -220,20 +220,20 @@ export default async function handler(req, res) {
         method: 'POST',
         body: JSON.stringify({ p_order_id: orderId, p_action: operation, p_actor_id: actorId })
       });
-      // Auto-promoted queue is now in the existing 'accepted' (called) state:
-      // send the same member notification as the legacy Staff action.
+      // A member must be notified only when their own drink becomes ready,
+      // not when the next waiting queue moves into the preparation phase.
       let warning;
-      if (operation === 'ready' && result?.promoted_order_id) {
+      if (operation === 'ready') {
         try {
-          const promoted = (await lookup(base, key, 'kathin_drink_orders',
-            'id=eq.' + Number(result.promoted_order_id) + '&select=*'))?.[0];
-          if (promoted) {
-            const notice = await notifyQueueCall(promoted, actorId);
-            if (notice?.status === 'failed') warning = 'เลื่อนคิวถัดไปแล้ว แต่แจ้ง LINE ไม่สำเร็จ';
+          const readyOrder = (await lookup(base, key, 'kathin_drink_orders',
+            'id=eq.' + orderId + '&select=*'))?.[0];
+          if (readyOrder) {
+            const notice = await notifyQueueCall(readyOrder, actorId);
+            if (notice?.status === 'failed') warning = 'เครื่องดื่มพร้อมรับแล้ว แต่แจ้ง LINE ไม่สำเร็จ';
           }
         } catch (noticeError) {
-          console.warn('Auto-promoted queue notification failed:', noticeError);
-          warning = 'เลื่อนคิวถัดไปแล้ว แต่แจ้ง LINE ไม่สำเร็จ';
+          console.warn('Ready drink notification failed:', noticeError);
+          warning = 'เครื่องดื่มพร้อมรับแล้ว แต่แจ้ง LINE ไม่สำเร็จ';
         }
       }
       return send(res, 200, { success: true, result, warning });
