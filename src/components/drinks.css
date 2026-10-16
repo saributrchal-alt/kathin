@@ -169,3 +169,76 @@
   .drink-order-review-header h2 { font-size: 19px; }
   .drink-order-review-body { padding: 17px 16px calc(21px + env(safe-area-inset-bottom, 0px)); }
 }
+
+
+/* Nathoeng Cafe event-opening countdown, 05:00 Thailand time 7 Nov 2569. */
+.drink-cafe-countdown {
+  display: grid;
+  justify-items: center;
+  gap: 13px;
+  width: 100%;
+  margin: 1px 0 8px;
+  padding: 17px 12px;
+  box-sizing: border-box;
+  border-radius: 18px;
+  border: 1px solid #ecc5bd;
+  background: linear-gradient(145deg, #fff8f1, #fff0ed);
+  text-align: center;
+}
+.drink-cafe-countdown-headline {
+  color: #8e3330;
+  font-size: clamp(16px, 3.3vw, 21px);
+  font-weight: 850;
+  line-height: 1.55;
+}
+.drink-cafe-countdown-numbers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+.drink-cafe-countdown-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 2px;
+  border: 1px solid #eecbc7;
+  border-radius: 12px;
+  background: white;
+  color: #ba2328;
+}
+.drink-cafe-countdown-unit strong {
+  display: block;
+  color: #ba2029;
+  font-size: clamp(27px, 8vw, 48px);
+  font-weight: 900;
+  letter-spacing: -.045em;
+  line-height: 1.1;
+}
+.drink-cafe-countdown-unit span {
+  font-size: clamp(10px, 2.7vw, 13px);
+  font-weight: 750;
+  color: #96514d;
+}
+.drink-cafe-countdown-opening {
+  color: #925f4a;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+.drink-order-review-submit:disabled {
+  background: #999994;
+  color: #fff;
+  cursor: not-allowed;
+  opacity: .67;
+  box-shadow: none;
+}
+@media (max-width: 600px) {
+  .drink-cafe-countdown { gap: 11px; padding: 13px 8px; }
+  .drink-cafe-countdown-numbers { gap: 5px; }
+  .drink-cafe-countdown-unit { padding: 10px 1px; border-radius: 10px; }
+  .drink-cafe-countdown-unit strong { font-size: clamp(25px, 7vw, 41px); }
+}
