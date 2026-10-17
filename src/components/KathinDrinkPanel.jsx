@@ -33,11 +33,11 @@ function DrinkThumbnail({ item }) {
 
 
 const MENU_SECTIONS = [
+  { key:'other', th:'เมนูแนะนำ', en:'Recommended Drinks', icon:'⭐', detail:'เครื่องดื่มแนะนำจาก NATHOENG CAFE' },
   { key:'all-styles', th:'ร้อน · เย็น · ปั่น', en:'Hot · Iced · Blended', icon:'☕', detail:'เลือกได้ครบทั้ง 3 รูปแบบ' },
   { key:'tea', th:'หมวดชา', en:'Tea Selection', icon:'🫖', detail:'ชาดำ ชานม และชาผลไม้' },
   { key:'green-tea', th:'หมวดชาเขียว', en:'Green Tea & Matcha', icon:'🍵', detail:'ชาเขียว มัทฉะ และโฮจิฉะ' },
-  { key:'soda', th:'หมวดโซดา', en:'Soda & Refreshers', icon:'🥤', detail:'เครื่องดื่มซ่าสดชื่น' },
-  { key:'other', th:'นม · โกโก้ · อื่น ๆ', en:'Milk, Cocoa & More', icon:'🥛', detail:'เครื่องดื่มหมวดอื่น ๆ' }
+  { key:'soda', th:'หมวดโซดา', en:'Soda & Refreshers', icon:'🥤', detail:'เครื่องดื่มซ่าสดชื่น' }
 ];
 function menuCategory(item) {
   if (PREPARATIONS.every(([style]) => typesFor(item).includes(style))) return 'all-styles';
