@@ -92,7 +92,7 @@ export default async function handler(req, res) {
           lookup(base, key, 'kathin_drink_event', 'event_key=eq.' + EVENT + '&select=event_key,is_open,starts_on,ends_on'),
           lookup(base, key, 'kathin_drink_menu', 'select=id,name_th,category'),
           lookup(base, key, 'kathin_drink_orders',
-            'event_key=eq.' + EVENT + '&service_day=eq.' + serviceDay + '&select=id,member_id,queue_number,queue_seq,menu_id,status,created_at,accepted_at,ready_at,sent_at,display_hidden_at,display_consent&order=queue_seq.asc&limit=500')
+            'event_key=eq.' + EVENT + '&service_day=eq.' + serviceDay + '&select=id,member_id,queue_number,queue_seq,menu_id,add_boba,status,created_at,accepted_at,ready_at,sent_at,display_hidden_at,display_consent&order=queue_seq.asc&limit=500')
         ]);
         // Guests only receive active, visible queue items; staff retains
         // complete day records. No member IDs or private profile data leave
@@ -130,7 +130,8 @@ export default async function handler(req, res) {
             return {
               id: o.id, queue_number: o.queue_number, queue_seq: o.queue_seq,
               status: o.status,
-              menu_name: menuMap.get(String(o.menu_id)) || 'เครื่องดื่ม',
+              menu_name: (menuMap.get(String(o.menu_id)) || 'เครื่องดื่ม') + (o.add_boba ? ' · เพิ่มไข่มุก' : ''),
+              add_boba: Boolean(o.add_boba),
               accepted_at: o.accepted_at, ready_at: o.ready_at, sent_at: o.sent_at,
               hidden: Boolean(o.display_hidden_at),
               member_name: m ? (m.display_name || m.full_name || 'สมาชิก') : 'ผู้ร่วมงาน',
@@ -206,14 +207,15 @@ export default async function handler(req, res) {
       const imageUrl = String(body.image_url || '').trim();
       const existingId = String(body.menuId || '');
       const preparations = body.preparations || (category === 'blended' ? ['blended'] : ['hot']);
+      const bobaAvailable = body.boba_available === true;
       if (!Array.isArray(preparations) || !preparations.length || preparations.length > 3 || preparations.some((p) => !['hot', 'iced', 'blended'].includes(p)) || !name || name.length > 100 || !['drip', 'blended'].includes(category)
           || (existingId && !/^[\w-]{1,80}$/.test(existingId))
           || (imageUrl && !(/^(?:https:\/\/media\.nathoeng\.com\/uploads\/temple\/[0-9]{4}\/[0-9]{2}\/[a-f0-9]{32}\.webp|https:\/\/media\.nathoeng\.com\/uploads\/kathin\/drinks\/[0-9]{2}-[a-z0-9-]+\.png)$/.test(imageUrl)))
           || !Number.isInteger(Number(body.sort_order)) || Number(body.sort_order) < 0 || Number(body.sort_order) > 9999
-          || typeof body.active !== 'boolean') return send(res, 400, { success: false, message: 'กรุณาตรวจชื่อ ประเภท รูปภาพ และลำดับเมนู' });
+          || typeof body.active !== 'boolean' || (body.boba_available !== undefined && typeof body.boba_available !== 'boolean')) return send(res, 400, { success: false, message: 'กรุณาตรวจชื่อ ประเภท รูปภาพ และลำดับเมนู' });
       const item = { name_th: name, name_en: String(body.name_en || name).trim().slice(0, 100),
         description: String(body.description || '').trim().slice(0, 500), category, image_url: imageUrl || null,
-        active: body.active, sort_order: Number(body.sort_order), preparations: [...new Set(preparations)] };
+        active: body.active, sort_order: Number(body.sort_order), preparations: [...new Set(preparations)], boba_available: bobaAvailable };
       if (existingId) {
         const found = await lookup(base, key, 'kathin_drink_menu', `id=eq.${encodeURIComponent(existingId)}&select=id`);
         if (!found?.length) return send(res, 404, { success: false, message: 'ไม่พบเมนูที่ต้องการแก้ไข' });
@@ -262,11 +264,13 @@ export default async function handler(req, res) {
           message: 'Nathoeng Cafe จะเปิดให้บริการวันที่ 7 พฤศจิกายน 2569 เวลา 05:00 น. (เวลาประเทศไทย)'
         });
       }
-      if (!/^(drip|blend)-/.test(String(body.menuId || ''))) return send(res, 400, { success: false, message: 'กรุณาเลือกเมนู' });
+      // Early menu IDs such as thai-tea/green-tea/cocoa are valid; the database checks eligibility.
+      if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(String(body.menuId || ''))) return send(res, 400, { success: false, message: 'กรุณาเลือกเมนู' });
       const day = String(body.serviceDay || '');
       if (!['hot', 'iced', 'blended'].includes(body.preparation)) return send(res, 400, { success: false, message: 'กรุณาเลือก ร้อน เย็น หรือปั่น' });
+      if (body.addBoba !== undefined && typeof body.addBoba !== 'boolean') return send(res, 400, { success: false, message: 'กรุณาระบุว่าจะเพิ่มไข่มุกหรือไม่' });
       const result = await rest(base, key, 'rpc/place_kathin_drink_choice', '', {
-        method: 'POST', body: JSON.stringify({ p_actor_id: actorId, p_member_id: String(body.memberId || actorId), p_menu_id: String(body.menuId), p_service_day: day, p_preparation: body.preparation })
+        method: 'POST', body: JSON.stringify({ p_actor_id: actorId, p_member_id: String(body.memberId || actorId), p_menu_id: String(body.menuId), p_service_day: day, p_preparation: body.preparation, p_add_boba: body.addBoba === true })
       });
       if (body.displayConsent === true && String(body.memberId || actorId) === actorId && Number.isSafeInteger(Number(result?.id))) {
         await rest(base, key, 'kathin_drink_orders',
@@ -325,6 +329,6 @@ export default async function handler(req, res) {
   } catch (error) {
     const message = String(error?.message || 'ดำเนินการไม่สำเร็จ');
     const status = /QUEUE_STATE_CONFLICT/.test(message) ? 409 : /QUEUE_NOT_FOUND/.test(message) ? 404 : /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /INVALID_MENU|INVALID_SERVICE_DAY|INVALID_PREPARATION/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
-    return send(res, status, { success: false, message: ({ NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'ขณะนี้อยู่นอกช่วงวันที่เปิดรับออร์เดอร์', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้' })[message] || message });
+    return send(res, status, { success: false, message: ({ BOBA_NOT_AVAILABLE: 'เมนูนี้ไม่รองรับการเพิ่มไข่มุก กรุณาเลือกใหม่', INVALID_BOBA_CHOICE: 'กรุณาระบุว่าต้องการไข่มุกหรือไม่', NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'ขณะนี้อยู่นอกช่วงวันที่เปิดรับออร์เดอร์', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้' })[message] || message });
   }
 }
