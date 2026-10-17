@@ -37,7 +37,6 @@ const MENU_SECTIONS = [
   { key:'tea', th:'หมวดชา', en:'Tea Selection', icon:'🫖', detail:'ชาดำ ชานม และชาผลไม้' },
   { key:'green-tea', th:'หมวดชาเขียว', en:'Green Tea & Matcha', icon:'🍵', detail:'ชาเขียว มัทฉะ และโฮจิฉะ' },
   { key:'soda', th:'หมวดโซดา', en:'Soda & Refreshers', icon:'🥤', detail:'เครื่องดื่มซ่าสดชื่น' },
-  { key:'coffee', th:'หมวดกาแฟ', en:'Coffee', icon:'☕', detail:'กาแฟรูปแบบอื่น ๆ' },
   { key:'other', th:'นม · โกโก้ · อื่น ๆ', en:'Milk, Cocoa & More', icon:'🥛', detail:'เครื่องดื่มหมวดอื่น ๆ' }
 ];
 function menuCategory(item) {
@@ -46,7 +45,7 @@ function menuCategory(item) {
   if (/โซดา|soda/.test(name)) return 'soda';
   if (/ชาเขียว|มัทฉะ|matcha|green[ -]?tea|hojicha|โฮจิฉะ/.test(name)) return 'green-tea';
   if (/ชา|tea/.test(name)) return 'tea';
-  if (/กาแฟ|coffee|espresso|เอสเพรส|cappuccino|คาปู|americano|อเมริกาโน|โอเลี้ยง|mocha|มอคค่า/.test(name)) return 'coffee';
+  // Non-triple-preparation coffees (e.g. Oliang) belong in the mixed drinks section.
   return 'other';
 }
 function groupMenu(menu) {
