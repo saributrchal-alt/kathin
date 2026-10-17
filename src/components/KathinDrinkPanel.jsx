@@ -21,6 +21,17 @@ const PREPARATIONS = [['hot', 'ร้อน'], ['iced', 'เย็น'], ['blend
 const typesFor = (item) => item.preparations || (item.category === 'blended' ? ['blended'] : ['hot']);
 const typeLabel = (value) => PREPARATIONS.find(([key]) => key === value)?.[1] || '';
 
+function DrinkThumbnail({ item }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [item.image_url]);
+  return <div className="drink-check-thumb">
+    {item.image_url && !failed
+      ? <img src={item.image_url} alt="" loading="lazy" onError={() => setFailed(true)} />
+      : <span aria-hidden="true">{item.category === 'blended' ? '🥤' : '☕'}</span>}
+  </div>;
+}
+
+
 const MENU_SECTIONS = [
   { key:'all-styles', th:'ร้อน · เย็น · ปั่น', en:'Hot · Iced · Blended', icon:'☕', detail:'เลือกได้ครบทั้ง 3 รูปแบบ' },
   { key:'tea', th:'หมวดชา', en:'Tea Selection', icon:'🫖', detail:'ชาดำ ชานม และชาผลไม้' },
@@ -263,7 +274,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             </div>
             <div className="drink-check-row drink-check-head"><strong>เมนู / Drinks</strong>{PREPARATIONS.map(([key, label]) => <strong key={key}>{label}</strong>)}</div>
             {group.items.map((item) => <div className={`drink-check-row ${selection?.menuId === item.id ? 'drink-check-selected' : ''}`} key={item.id}>
-            <div className="drink-check-name"><div className="drink-check-thumb">{item.image_url ? <img src={item.image_url} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <span aria-hidden="true">{item.category === 'blended' ? '🥤' : '☕'}</span>}</div><div><strong>{item.name_th}</strong>{item.name_en && <span className="drink-check-english" lang="en">{item.name_en}</span>}{item.description && <small>{item.description}</small>}{!item.active && <small>พักให้บริการ</small>}</div></div>
+            <div className="drink-check-name"><DrinkThumbnail item={item} /><div><strong>{item.name_th}</strong>{item.name_en && <span className="drink-check-english" lang="en">{item.name_en}</span>}{item.description && <small>{item.description}</small>}{!item.active && <small>พักให้บริการ</small>}</div></div>
             {PREPARATIONS.map(([value, label]) => <div className="drink-check-cell" key={value}>{typesFor(item).includes(value) ? <label className="drink-check-control"><input type="radio" name="drink-choice" aria-label={`${item.name_th} ${label}`} checked={selection?.menuId === item.id && selection?.preparation === value} disabled={!item.active || Boolean(working)} onChange={() => { setSelection({ menuId: item.id, preparation: value }); setOrderError(''); }} /><span aria-hidden="true">✓</span></label> : <span aria-label="ไม่มีรูปแบบนี้">—</span>}</div>)}
           </div>)}
           </section>)}
