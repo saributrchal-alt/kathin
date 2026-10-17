@@ -164,7 +164,14 @@ export default async function handler(req, res) {
       ]);
       const memberOrders = (orders || []).filter((o) => o.member_id === actorId);
       const usedRights = new Set(memberOrders.filter((o) => o.status !== 'cancelled').map((o) => String(o.right_id)));
-      const data = { event, menu: (menu || []).filter((item) => item.active || admin), rights: rights || [], availableRights: (rights || []).filter((r) => !usedRights.has(String(r.id))).length,
+      // Archived drinks remain in the database only to preserve historical order names.
+      // Hide them from both the customer menu and the admin menu-management list.
+      const orderedMenuIds = new Set((orders || []).map(o => String(o.menu_id)));
+      const orderMenuNames = Object.fromEntries((menu || [])
+        .filter(item => orderedMenuIds.has(String(item.id)))
+        .map(item => [item.id, item.name_th]));
+      const data = { event, menu: (menu || []).filter((item) => !item.archived_at && (item.active || admin)), orderMenuNames,
+        rights: rights || [], availableRights: (rights || []).filter((r) => !usedRights.has(String(r.id))).length,
         orders: orders || [], currentQueue: called?.[0]?.queue_number || null,
         currentCall: called?.[0] ? { orderId: called[0].id, queueNumber: called[0].queue_number, calledAt: called[0].accepted_at, status: called[0].status } : null,
         serviceDay: today, viewerId: actorId, staff, admin };
