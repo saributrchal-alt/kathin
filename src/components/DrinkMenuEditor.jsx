@@ -21,7 +21,7 @@ async function prepareImage(file) {
 }
 
 export default function DrinkMenuEditor({ item, onSaved, onCancel }) {
-  const [form, setForm] = useState({ name_th: '', name_en: '', description: '', category: 'drip', image_url: '', sort_order: 100, active: true, ...item, preparations: item?.preparations || (item?.category === 'blended' ? ['blended'] : ['hot']) });
+  const [form, setForm] = useState({ name_th: '', name_en: '', description: '', category: 'drip', image_url: '', sort_order: 100, active: true, boba_available: false, ...item, preparations: item?.preparations || (item?.category === 'blended' ? ['blended'] : ['hot']) });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const fileRef = useRef(null);
@@ -57,6 +57,7 @@ export default function DrinkMenuEditor({ item, onSaved, onCancel }) {
           <label>ประเภท<select value={form.category} onChange={(e) => update('category', e.target.value)}><option value="drip">ดริป / ชง</option><option value="blended">ปั่น</option></select></label>
           <div><strong>รูปแบบที่ให้เลือก *</strong>{[['hot', 'ร้อน'], ['iced', 'เย็น'], ['blended', 'ปั่น']].map(([value, label]) => <label className="drink-checkbox" key={value}><input type="checkbox" checked={form.preparations.includes(value)} onChange={(e) => update('preparations', e.target.checked ? [...form.preparations, value] : form.preparations.filter((p) => p !== value))} />{label}</label>)}</div>
           <label>ลำดับแสดง<input type="number" required min="0" max="9999" value={form.sort_order} onChange={(e) => update('sort_order', e.target.value)} /></label>
+          <label className="drink-checkbox"><input type="checkbox" checked={form.boba_available === true} onChange={(e) => update('boba_available', e.target.checked)} /> 🧋 เมนูนี้เลือกเพิ่มไข่มุกได้</label>
           <label className="drink-checkbox"><input type="checkbox" checked={form.active} onChange={(e) => update('active', e.target.checked)} /> เปิดให้สมาชิกสั่งเมนูนี้</label>
         </div>
       </div>
