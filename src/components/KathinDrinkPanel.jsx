@@ -21,6 +21,31 @@ const PREPARATIONS = [['hot', 'ร้อน'], ['iced', 'เย็น'], ['blend
 const typesFor = (item) => item.preparations || (item.category === 'blended' ? ['blended'] : ['hot']);
 const typeLabel = (value) => PREPARATIONS.find(([key]) => key === value)?.[1] || '';
 
+const MENU_SECTIONS = [
+  { key:'all-styles', th:'ร้อน · เย็น · ปั่น', en:'Hot · Iced · Blended', icon:'☕', detail:'เลือกได้ครบทั้ง 3 รูปแบบ' },
+  { key:'tea', th:'หมวดชา', en:'Tea Selection', icon:'🫖', detail:'ชาดำ ชานม และชาผลไม้' },
+  { key:'green-tea', th:'หมวดชาเขียว', en:'Green Tea & Matcha', icon:'🍵', detail:'ชาเขียว มัทฉะ และโฮจิฉะ' },
+  { key:'soda', th:'หมวดโซดา', en:'Soda & Refreshers', icon:'🥤', detail:'เครื่องดื่มซ่าสดชื่น' },
+  { key:'coffee', th:'หมวดกาแฟ', en:'Coffee', icon:'☕', detail:'กาแฟรูปแบบอื่น ๆ' },
+  { key:'other', th:'นม · โกโก้ · อื่น ๆ', en:'Milk, Cocoa & More', icon:'🥛', detail:'เครื่องดื่มหมวดอื่น ๆ' }
+];
+function menuCategory(item) {
+  if (PREPARATIONS.every(([style]) => typesFor(item).includes(style))) return 'all-styles';
+  const name = `${item.name_th || ''} ${item.name_en || ''}`.toLowerCase();
+  if (/โซดา|soda/.test(name)) return 'soda';
+  if (/ชาเขียว|มัทฉะ|matcha|green[ -]?tea|hojicha|โฮจิฉะ/.test(name)) return 'green-tea';
+  if (/ชา|tea/.test(name)) return 'tea';
+  if (/กาแฟ|coffee|espresso|เอสเพรส|cappuccino|คาปู|americano|อเมริกาโน|โอเลี้ยง|mocha|มอคค่า/.test(name)) return 'coffee';
+  return 'other';
+}
+function groupMenu(menu) {
+  const sections = MENU_SECTIONS.map(section => ({...section, items:[]}));
+  const sectionByKey = new Map(sections.map(section => [section.key, section]));
+  for (const item of menu) sectionByKey.get(menuCategory(item)).items.push(item);
+  return sections.filter(section => section.items.length);
+}
+
+
 const formatServiceDay = (day, th) => new Date(`${day}T12:00:00+07:00`).toLocaleDateString(th ? 'th-TH' : 'en-GB', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short', year: 'numeric' });
 
 function printDrinkMenu(menu) {
@@ -78,6 +103,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   }, [query, staffMode]);
 
   const menu = useMemo(() => data?.menu || [], [data]);
+  const groupedMenu = useMemo(() => groupMenu(menu), [menu]);
   const fire = async (action, values = {}) => {
     setWorking(action); setMessage('');
     try {
@@ -221,11 +247,23 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       <section className="drink-check-menu" style={{ marginBottom: 24 }}>
         <h2>เลือกเครื่องดื่ม</h2><p className="drink-check-intro">ติ๊กเมนูและรูปแบบที่ต้องการ · 1 สิทธิ์ต่อ 1 แก้ว</p>
         <div role="radiogroup" aria-label="เลือกเครื่องดื่มและรูปแบบ">
-          <div className="drink-check-row drink-check-head"><strong>เมนูเครื่องดื่ม</strong>{PREPARATIONS.map(([key, label]) => <strong key={key}>{label}</strong>)}</div>
-          {menu.map((item) => <div className={`drink-check-row ${selection?.menuId === item.id ? 'drink-check-selected' : ''}`} key={item.id}>
+          {groupedMenu.map(group => <section className="drink-menu-section" key={group.key}
+            aria-labelledby={`drink-menu-${group.key}`}>
+            <div className="drink-menu-section-heading">
+              <span className="drink-menu-section-icon" aria-hidden="true">{group.icon}</span>
+              <div className="drink-menu-section-labels">
+                <h3 id={`drink-menu-${group.key}`}>{group.th}</h3>
+                <span lang="en">{group.en}</span>
+                <p>{group.detail}</p>
+              </div>
+              <span className="drink-menu-section-total">{group.items.length} {th ? 'เมนู' : 'items'}</span>
+            </div>
+            <div className="drink-check-row drink-check-head"><strong>เมนู / Drinks</strong>{PREPARATIONS.map(([key, label]) => <strong key={key}>{label}</strong>)}</div>
+            {group.items.map((item) => <div className={`drink-check-row ${selection?.menuId === item.id ? 'drink-check-selected' : ''}`} key={item.id}>
             <div className="drink-check-name"><div className="drink-check-thumb">{item.image_url ? <img src={item.image_url} alt="" loading="lazy" onError={(e) => { e.currentTarget.style.display = 'none'; }} /> : <span aria-hidden="true">{item.category === 'blended' ? '🥤' : '☕'}</span>}</div><div><strong>{item.name_th}</strong>{item.name_en && <span className="drink-check-english" lang="en">{item.name_en}</span>}{item.description && <small>{item.description}</small>}{!item.active && <small>พักให้บริการ</small>}</div></div>
             {PREPARATIONS.map(([value, label]) => <div className="drink-check-cell" key={value}>{typesFor(item).includes(value) ? <label className="drink-check-control"><input type="radio" name="drink-choice" aria-label={`${item.name_th} ${label}`} checked={selection?.menuId === item.id && selection?.preparation === value} disabled={!item.active || Boolean(working)} onChange={() => { setSelection({ menuId: item.id, preparation: value }); setOrderError(''); }} /><span aria-hidden="true">✓</span></label> : <span aria-label="ไม่มีรูปแบบนี้">—</span>}</div>)}
           </div>)}
+          </section>)}
         </div>
         {!menu.length && <p>กำลังจัดเตรียมเมนูเครื่องดื่ม</p>}
         {!staffMode && <label style={{display:'flex',alignItems:'flex-start',gap:10,padding:'12px 13px',borderRadius:12,background:'#ecf7ec',border:'1px solid #c7dcc9',fontSize:13,lineHeight:1.65,margin:'12px 0',cursor:'pointer'}}>
