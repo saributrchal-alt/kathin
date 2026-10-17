@@ -117,6 +117,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   }, [query, staffMode]);
 
   const menu = useMemo(() => data?.menu || [], [data]);
+  const nameForMenuId = (id) => menu.find(item => item.id === id)?.name_th || data?.orderMenuNames?.[id] || id;
   const groupedMenu = useMemo(() => groupMenu(menu), [menu]);
   const fire = async (action, values = {}) => {
     setWorking(action); setMessage('');
@@ -247,7 +248,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             <h2 style={{ fontSize: 'clamp(16px, 4.3vw, 22px)', margin: '0 0 14px', color: '#674613' }}>{th ? 'คิวของฉัน' : 'My queue'}</h2>
             {activeOrders.map((order, index) => <div key={order.id} style={{ marginTop: index ? 20 : 0, borderTop: index ? '1px solid #e6cc91' : undefined, paddingTop: index ? 16 : 0 }}>
               <b style={{ display: 'block', color: '#573b11', fontSize: 'clamp(48px, 14vw, 112px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{shortQueue(order.queue_number)}</b>
-              <div style={{ marginTop: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id}{order.preparation && ` · ${typeLabel(order.preparation)}`}</div>
+              <div style={{ marginTop: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{nameForMenuId(order.menu_id)}{order.preparation && ` · ${typeLabel(order.preparation)}`}</div>
               {order.status === 'ready' ? <div className="drink-ready" role="status">{th ? 'เครื่องดื่มพร้อมรับแล้ว' : 'Your drink is ready'}</div> : order.status === 'accepted' ? <small style={{display:'block',marginTop:6}}>{th ? 'เรียกคิวแล้ว / กำลังเตรียม' : 'Called / preparing'}</small> : <small style={{ display: 'block', marginTop: 6 }}>{order.status === 'preparing' ? (th ? 'กำลังเตรียมเครื่องดื่ม' : 'Preparing your drink') : (th ? 'รอเรียกรับเครื่องดื่ม' : 'Waiting to be called')}</small>}
             </div>)}
             {!activeOrders.length && <><b style={{ display: 'block', fontSize: 'clamp(48px, 14vw, 112px)', lineHeight: 1.1, color: '#573b11' }}>—</b><small style={{ display: 'block', marginTop: 12 }}>{th ? 'ไม่มีคิวที่รอรับเครื่องดื่ม' : 'No drinks waiting for collection'}</small></>}
@@ -255,7 +256,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
         </div>
         {!staffMode && orders.some((order) => order.service_day !== day) && <details style={{ marginTop: 16 }}>
           <summary style={{ cursor: 'pointer', padding: '10px 0' }}>{th ? 'ดูรายการวันก่อน' : 'Previous orders'}</summary>
-          {orders.filter((order) => order.service_day !== day).map((order) => <div key={order.id} style={{ padding: '10px 0', borderTop: '1px solid #eee8dd' }}><strong>{shortQueue(order.queue_number)}</strong> · {menu.find((m) => m.id === order.menu_id)?.name_th || order.menu_id} · {formatServiceDay(order.service_day, th)}</div>)}
+          {orders.filter((order) => order.service_day !== day).map((order) => <div key={order.id} style={{ padding: '10px 0', borderTop: '1px solid #eee8dd' }}><strong>{shortQueue(order.queue_number)}</strong> · {nameForMenuId(order.menu_id)} · {formatServiceDay(order.service_day, th)}</div>)}
         </details>}
       </section>}
       <section className="drink-check-menu" style={{ marginBottom: 24 }}>
@@ -388,7 +389,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             <div>
               <b style={{display:'block',color:'#172d23',fontSize:'clamp(64px,18vw,96px)',fontWeight:900,lineHeight:1.1,fontVariantNumeric:'tabular-nums',marginBottom:10}}>{shortQueue(order.queue_number)}</b>
               <b>{order.member_name||'สมาชิก'}</b>
-              <div>{menu.find(item=>item.id===order.menu_id)?.name_th||order.menu_id}{order.preparation&&` · ${typeLabel(order.preparation)}`} · {formatServiceDay(order.service_day,th)}</div>
+              <div>{nameForMenuId(order.menu_id)}{order.preparation&&` · ${typeLabel(order.preparation)}`} · {formatServiceDay(order.service_day,th)}</div>
               <small className={order.status==='accepted'?'drink-ready':undefined}>{({pending:th?'รอเรียกรับ':'Waiting to be called',accepted:th?'ถึงคิวแล้ว':'Ready for collection',sent:th?'รับเครื่องดื่มแล้ว':'Collected'})[order.status]}</small>
             </div>
             <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
