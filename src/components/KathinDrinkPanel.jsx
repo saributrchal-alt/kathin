@@ -39,7 +39,10 @@ const MENU_SECTIONS = [
   { key:'green-tea', th:'หมวดชาเขียว', en:'Green Tea & Matcha', icon:'🍵', detail:'ชาเขียว มัทฉะ และโฮจิฉะ' },
   { key:'soda', th:'หมวดโซดา', en:'Soda & Refreshers', icon:'🥤', detail:'เครื่องดื่มซ่าสดชื่น' }
 ];
+const FEATURED_DRINK_IDS = ['thai-tea', 'green-tea'];
 function menuCategory(item) {
+  // These member favourites are featured first, even though they offer all three preparations.
+  if (FEATURED_DRINK_IDS.includes(item.id)) return 'other';
   if (PREPARATIONS.every(([style]) => typesFor(item).includes(style))) return 'all-styles';
   const name = `${item.name_th || ''} ${item.name_en || ''}`.toLowerCase();
   if (/โซดา|soda/.test(name)) return 'soda';
@@ -52,6 +55,16 @@ function groupMenu(menu) {
   const sections = MENU_SECTIONS.map(section => ({...section, items:[]}));
   const sectionByKey = new Map(sections.map(section => [section.key, section]));
   for (const item of menu) sectionByKey.get(menuCategory(item)).items.push(item);
+  // Pin Thai Tea and Green Milk Tea to positions 1–2 in Recommended Drinks.
+  sectionByKey.get('other').items.sort((a, b) => {
+    const rank = item => FEATURED_DRINK_IDS.indexOf(item.id);
+    const aRank = rank(a);
+    const bRank = rank(b);
+    if (aRank < 0 && bRank < 0) return 0;
+    if (aRank < 0) return 1;
+    if (bRank < 0) return -1;
+    return aRank - bRank;
+  });
   return sections.filter(section => section.items.length);
 }
 
