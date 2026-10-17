@@ -95,6 +95,9 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const [target, setTarget] = useState(null);
   const [editingMenu, setEditingMenu] = useState(null);
   const [selection, setSelection] = useState(null);
+  const [pearlPromptOpen, setPearlPromptOpen] = useState(false);
+  const pearlYesRef = useRef(null);
+  const pearlReturnFocusRef = useRef(null);
   const [orderReviewOpen, setOrderReviewOpen] = useState(false);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const [orderError, setOrderError] = useState('');
@@ -137,7 +140,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
       const response = await fetch('/api/kathin-drinks', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...values }) });
       const body = await response.json();
       if (!response.ok || !body.success) throw new Error(body.message || 'บันทึกไม่สำเร็จ');
-      if (action === 'order') { setDisplayConsent(false); setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${shortQueue(body.order.queue_number)}`); setSelection(null); if (!staffMode) onOrderPlaced?.(body.order); }
+      if (action === 'order') { setDisplayConsent(false); setMessage(`${th ? 'รับคิวแล้ว' : 'Queued'}: ${shortQueue(body.order.queue_number)}`); setSelection(null); setPearlPromptOpen(false); if (!staffMode) onOrderPlaced?.(body.order); }
       else setMessage(body.warning || (action === 'recall' ? (th ? 'เรียกเสียงซ้ำแล้ว' : 'Called again') : action === 'transition' && values.status === 'accepted'
         ? (th ? `เรียกรับคิว ${shortQueue(body.order.queue_number)} แล้ว${body.notification?.status === 'sent' ? ' · แจ้ง LINE แล้ว' : ''}` : 'Queue called')
         : (th ? 'บันทึกเรียบร้อย' : 'Saved')));
@@ -146,7 +149,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
     finally { setWorking(''); }
   };
 
-  const choose = (member) => { setSelection(null); setTarget(member); setQuery(''); setMembers([]); };
+  const choose = (member) => { setSelection(null); setPearlPromptOpen(false); setTarget(member); setQuery(''); setMembers([]); };
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Bangkok' });
   const day = data?.serviceDay || today;
   const beforeCafeOpening = clockNow < CAFE_OPEN_MS;
@@ -155,7 +158,43 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
   const remaining = countdownParts(CAFE_OPEN_MS - clockNow);
   const canOrder = eventLive && Boolean(data?.event?.is_open) && (staffMode ? Boolean(target) : true);
   const selectedItem = menu.find(item => item.id === selection?.menuId);
-  const selectionValid = Boolean(selectedItem?.active && typesFor(selectedItem).includes(selection?.preparation));
+  const selectionValid = Boolean(selectedItem?.active
+    && typesFor(selectedItem).includes(selection?.preparation)
+    && (!selectedItem.boba_available || typeof selection?.addBoba === 'boolean'));
+  const chooseDrink = (item, preparation) => {
+    pearlReturnFocusRef.current = document.activeElement;
+    setOrderError('');
+    setSelection({menuId:item.id, preparation, addBoba:item.boba_available ? null : false});
+    setPearlPromptOpen(Boolean(item.boba_available));
+  };
+  const answerPearl = addBoba => {
+    setSelection(old => old ? {...old,addBoba} : old);
+    setPearlPromptOpen(false);
+  };
+  const cancelPearl = () => {
+    setSelection(null);
+    setPearlPromptOpen(false);
+  };
+  useEffect(() => {
+    if (!pearlPromptOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const frame = window.requestAnimationFrame(() => pearlYesRef.current?.focus());
+    const handleKey = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setSelection(null);
+        setPearlPromptOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', handleKey);
+      document.body.style.overflow = previousOverflow;
+      window.requestAnimationFrame(() => pearlReturnFocusRef.current?.focus?.({preventScroll:true}));
+    };
+  }, [pearlPromptOpen]);
   const hasDrinkRight = staffMode ? true : (data?.availableRights || 0) > 0;
   const maySubmit = Boolean(selectionValid && canOrder && hasDrinkRight && !working);
   const showMemberDock = !staffMode && orderFirst && Boolean(data);
@@ -260,7 +299,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             <h2 style={{ fontSize: 'clamp(16px, 4.3vw, 22px)', margin: '0 0 14px', color: '#674613' }}>{th ? 'คิวของฉัน' : 'My queue'}</h2>
             {activeOrders.map((order, index) => <div key={order.id} style={{ marginTop: index ? 20 : 0, borderTop: index ? '1px solid #e6cc91' : undefined, paddingTop: index ? 16 : 0 }}>
               <b style={{ display: 'block', color: '#573b11', fontSize: 'clamp(48px, 14vw, 112px)', fontWeight: 900, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>{shortQueue(order.queue_number)}</b>
-              <div style={{ marginTop: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{nameForMenuId(order.menu_id)}{order.preparation && ` · ${typeLabel(order.preparation)}`}</div>
+              <div style={{ marginTop: 12, fontWeight: 700, overflowWrap: 'anywhere' }}>{nameForMenuId(order.menu_id)}{order.preparation && ` · ${typeLabel(order.preparation)}`}{order.add_boba && ' · 🧋 เพิ่มไข่มุก'}</div>
               {order.status === 'ready' ? <div className="drink-ready" role="status">{th ? 'เครื่องดื่มพร้อมรับแล้ว' : 'Your drink is ready'}</div> : order.status === 'accepted' ? <small style={{display:'block',marginTop:6}}>{th ? 'เรียกคิวแล้ว / กำลังเตรียม' : 'Called / preparing'}</small> : <small style={{ display: 'block', marginTop: 6 }}>{order.status === 'preparing' ? (th ? 'กำลังเตรียมเครื่องดื่ม' : 'Preparing your drink') : (th ? 'รอเรียกรับเครื่องดื่ม' : 'Waiting to be called')}</small>}
             </div>)}
             {!activeOrders.length && <><b style={{ display: 'block', fontSize: 'clamp(48px, 14vw, 112px)', lineHeight: 1.1, color: '#573b11' }}>—</b><small style={{ display: 'block', marginTop: 12 }}>{th ? 'ไม่มีคิวที่รอรับเครื่องดื่ม' : 'No drinks waiting for collection'}</small></>}
@@ -268,7 +307,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
         </div>
         {!staffMode && orders.some((order) => order.service_day !== day) && <details style={{ marginTop: 16 }}>
           <summary style={{ cursor: 'pointer', padding: '10px 0' }}>{th ? 'ดูรายการวันก่อน' : 'Previous orders'}</summary>
-          {orders.filter((order) => order.service_day !== day).map((order) => <div key={order.id} style={{ padding: '10px 0', borderTop: '1px solid #eee8dd' }}><strong>{shortQueue(order.queue_number)}</strong> · {nameForMenuId(order.menu_id)} · {formatServiceDay(order.service_day, th)}</div>)}
+          {orders.filter((order) => order.service_day !== day).map((order) => <div key={order.id} style={{ padding: '10px 0', borderTop: '1px solid #eee8dd' }}><strong>{shortQueue(order.queue_number)}</strong> · {nameForMenuId(order.menu_id)}{order.add_boba && ' · 🧋 เพิ่มไข่มุก'} · {formatServiceDay(order.service_day, th)}</div>)}
         </details>}
       </section>}
       <section className="drink-check-menu" style={{ marginBottom: 24 }}>
@@ -287,8 +326,8 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             </div>
             <div className="drink-check-row drink-check-head"><strong>เมนู / Drinks</strong>{PREPARATIONS.map(([key, label]) => <strong key={key}>{label}</strong>)}</div>
             {group.items.map((item) => <div className={`drink-check-row ${selection?.menuId === item.id ? 'drink-check-selected' : ''}`} key={item.id}>
-            <div className="drink-check-name"><DrinkThumbnail item={item} /><div><strong>{item.name_th}</strong>{item.name_en && <span className="drink-check-english" lang="en">{item.name_en}</span>}{item.description && <small>{item.description}</small>}{!item.active && <small>พักให้บริการ</small>}</div></div>
-            {PREPARATIONS.map(([value, label]) => <div className="drink-check-cell" key={value}>{typesFor(item).includes(value) ? <label className="drink-check-control"><input type="radio" name="drink-choice" aria-label={`${item.name_th} ${label}`} checked={selection?.menuId === item.id && selection?.preparation === value} disabled={!item.active || Boolean(working)} onChange={() => { setSelection({ menuId: item.id, preparation: value }); setOrderError(''); }} /><span aria-hidden="true">✓</span></label> : <span aria-label="ไม่มีรูปแบบนี้">—</span>}</div>)}
+            <div className="drink-check-name"><DrinkThumbnail item={item} /><div><strong>{item.name_th}</strong>{item.name_en && <span className="drink-check-english" lang="en">{item.name_en}</span>}{item.description && <small>{item.description}</small>}{item.boba_available && <small className="drink-boba-available">🧋 เพิ่มไข่มุกได้ · Boba available</small>}{!item.active && <small>พักให้บริการ</small>}</div></div>
+            {PREPARATIONS.map(([value, label]) => <div className="drink-check-cell" key={value}>{typesFor(item).includes(value) ? <label className="drink-check-control"><input type="radio" name="drink-choice" aria-label={`${item.name_th} ${label}`} checked={selection?.menuId === item.id && selection?.preparation === value} disabled={!item.active || Boolean(working)} onChange={() => chooseDrink(item, value)} /><span aria-hidden="true">✓</span></label> : <span aria-label="ไม่มีรูปแบบนี้">—</span>}</div>)}
           </div>)}
           </section>)}
         </div>
@@ -299,7 +338,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
          </label>}
          <div className="drink-choice-summary" aria-live="polite">
            <div>{selection ? <>
-             <strong>{selectedItem?.name_th} · {typeLabel(selection.preparation)}</strong>
+             <strong>{selectedItem?.name_th} · {typeLabel(selection.preparation)}{selection.addBoba ? ' · 🧋 เพิ่มไข่มุก' : ''}</strong>
              <small>จำนวน 1 แก้ว · ใช้ 1 สิทธิ์{staffMode && target ? ` · ${target.name}` : ''}</small>
            </> : <span>เลือกช่องร้อน เย็น หรือปั่น ของเมนูที่ต้องการ</span>}</div>
            {staffMode && <button type="button" className="drink-primary" disabled={!maySubmit}
@@ -315,7 +354,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
         <div className="drink-member-order-dock-inner">
           <div className="drink-member-order-dock-selection">
             <small>{selectionValid ? 'เครื่องดื่มที่เลือก · 1 แก้ว' : 'เลือกเครื่องดื่ม 1 แก้ว'}</small>
-            <strong>{selectionValid ? `${selectedItem.name_th} · ${typeLabel(selection.preparation)}` : 'เลือกเมนูและรูปแบบ ร้อน / เย็น / ปั่น'}</strong>
+            <strong>{selectionValid ? `${selectedItem.name_th} · ${typeLabel(selection.preparation)}${selection.addBoba ? ' · 🧋 เพิ่มไข่มุก' : ''}` : (pearlPromptOpen ? 'กรุณาเลือกว่าจะเพิ่มไข่มุกหรือไม่' : 'เลือกเมนูและรูปแบบ ร้อน / เย็น / ปั่น')}</strong>
           </div>
           <button type="button" className="drink-primary drink-member-order-confirm"
             disabled={!selectionValid || Boolean(working)}
@@ -324,6 +363,31 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
           </button>
         </div>
       </div>}
+      {pearlPromptOpen && selection && selectedItem && createPortal(
+        <div className="drink-boba-backdrop" onMouseDown={event => {
+          if (event.target === event.currentTarget) cancelPearl();
+        }}>
+          <section className="drink-boba-modal" role="dialog" aria-modal="true"
+            aria-labelledby="drink-boba-title" aria-describedby="drink-boba-description">
+            <span className="drink-boba-emoji" aria-hidden="true">🧋</span>
+            <p className="drink-boba-kicker">NATHOENG CAFE · CUSTOMIZE YOUR DRINK</p>
+            <h2 id="drink-boba-title">ต้องการเพิ่มไข่มุกไหม?</h2>
+            <p id="drink-boba-description" className="drink-boba-description">
+              {selectedItem.name_th} · {typeLabel(selection.preparation)}
+              <span lang="en">{selectedItem.name_en || ''}</span>
+            </p>
+            <div className="drink-boba-actions">
+              <button ref={pearlYesRef} className="drink-boba-yes" type="button"
+                onClick={() => answerPearl(true)}>🧋 เพิ่มไข่มุก <small>Add Boba Pearls</small></button>
+              <button className="drink-boba-no" type="button"
+                onClick={() => answerPearl(false)}>ไม่ใส่ไข่มุก <small>No Boba Pearls</small></button>
+            </div>
+            <button type="button" className="drink-boba-cancel" onClick={cancelPearl}>
+              ← กลับไปเลือกเครื่องดื่ม
+            </button>
+          </section>
+        </div>, document.body
+      )}
       {orderReviewOpen && createPortal(
         <div className="drink-order-review-backdrop"
           onMouseDown={event => { if (event.target === event.currentTarget && !working) setOrderReviewOpen(false); }}>
@@ -353,7 +417,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
               </div>}
               <span className="drink-order-review-icon" aria-hidden="true">☕</span>
               <strong className="drink-order-review-name">{selectedItem?.name_th || 'เครื่องดื่ม'}</strong>
-              <span>รูปแบบ {typeLabel(selection?.preparation)} · จำนวน 1 แก้ว · ใช้ 1 สิทธิ์</span>
+              <span>รูปแบบ {typeLabel(selection?.preparation)}{selectedItem?.boba_available ? (selection?.addBoba ? ' · 🧋 เพิ่มไข่มุก' : ' · ไม่ใส่ไข่มุก') : ''} · จำนวน 1 แก้ว · ใช้ 1 สิทธิ์</span>
               {beforeCafeOpening && <p className="drink-order-review-notice" role="status">
                 สามารถทดลองเลือกเครื่องดื่มได้ แต่ยังไม่สามารถยืนยันออร์เดอร์ก่อนเวลาเปิดบริการจริง
               </p>}
@@ -401,7 +465,7 @@ export default function KathinDrinkPanel({ user, lang = 'th', staffMode = false,
             <div>
               <b style={{display:'block',color:'#172d23',fontSize:'clamp(64px,18vw,96px)',fontWeight:900,lineHeight:1.1,fontVariantNumeric:'tabular-nums',marginBottom:10}}>{shortQueue(order.queue_number)}</b>
               <b>{order.member_name||'สมาชิก'}</b>
-              <div>{nameForMenuId(order.menu_id)}{order.preparation&&` · ${typeLabel(order.preparation)}`} · {formatServiceDay(order.service_day,th)}</div>
+              <div>{nameForMenuId(order.menu_id)}{order.preparation&&` · ${typeLabel(order.preparation)}`}{order.add_boba && ' · 🧋 เพิ่มไข่มุก'} · {formatServiceDay(order.service_day,th)}</div>
               <small className={order.status==='accepted'?'drink-ready':undefined}>{({pending:th?'รอเรียกรับ':'Waiting to be called',accepted:th?'ถึงคิวแล้ว':'Ready for collection',sent:th?'รับเครื่องดื่มแล้ว':'Collected'})[order.status]}</small>
             </div>
             <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
