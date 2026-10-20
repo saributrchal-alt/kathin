@@ -64,7 +64,7 @@ export default function App() {
       const response = await fetch('/api/kathin-drinks?view=member', { credentials: 'include', cache: 'no-store' });
       if (response.ok) {
         const body = await response.json();
-        if (!cancelled) { const allowed = Boolean(body.staff || body.admin); setCanStaff(allowed); setStaffMode(allowed && !['#order-drink','#my-queue','#public-board'].includes(window.location.hash)); setSessionState('ready'); }
+        if (!cancelled) { const allowed = Boolean(body.staff || body.admin); setCanStaff(allowed); setStaffMode(allowed && !['#order-drink','#my-queue','#public-board','#event-home','#event-schedule','#trip-itinerary','#trip-booking'].includes(window.location.hash)); setSessionState('ready'); }
       }
       return response;
     };
