@@ -236,7 +236,7 @@ export default async function handler(req, res) {
     const body = req.body || {};
     const action = String(body.action || '');
     if (action === 'trip-profile-save') {
-      const phone = String(body.phone || '').trim().replace(/\\s+/g, ' ');
+      const phone = String(body.phone || '').trim().replace(/\s+/g, ' ');
       const passportStatus = String(body.passport_status || '');
       if (!/^[+0-9() -]{8,20}$/.test(phone) || !['yes', 'no'].includes(passportStatus))
         return send(res, 400, { success: false, message: 'กรุณากรอกเบอร์โทรศัพท์และเลือกสถานะ Passport ให้ถูกต้อง' });
