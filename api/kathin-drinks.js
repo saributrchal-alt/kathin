@@ -4,6 +4,7 @@ import { createSessionToken, getSessionFromRequest, setSessionCookie } from '../
 import { notifyQueueCall } from '../lib/_queue-notify.js';
 
 const EVENT = 'kathin-2569';
+const TRIP_EVENT = 'kathin-2569-trip-2026-11-07';
 const headers = (key, extra = {}) => ({
   apikey: key, ...(key.startsWith('sb_secret_') ? {} : { Authorization: `Bearer ${key}` }), Accept: 'application/json',
   'Content-Type': 'application/json', ...extra
@@ -39,7 +40,8 @@ export default async function handler(req, res) {
   const base = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!base || !key) return send(res, 500, { success: false, message: 'ระบบฐานข้อมูลยังตั้งค่าไม่ครบ' });
-  if (req.method === 'POST' && req.body?.action === 'session-exchange') {
+  const isEventHandoff = req.method === 'POST' && req.query?.handoff === 'event';
+  if (req.method === 'POST' && (req.body?.action === 'session-exchange' || isEventHandoff)) {
     const token = String(req.body?.token || '');
     const secret = process.env.KATHIN_BRIDGE_SECRET;
     if (!secret || token.length > 4000) return send(res, 401, { success: false, message: 'ไม่สามารถยืนยันบัญชีสมาชิกได้' });
@@ -56,6 +58,13 @@ export default async function handler(req, res) {
       const member = people?.[0];
       if (!member || (member.membership_status && member.membership_status !== 'active')) return send(res, 403, { success: false, message: 'สมาชิกไม่พร้อมใช้งาน' });
       setSessionCookie(res, createSessionToken({ memberId: member.id, role: member.role || 'member' }), 12 * 3600);
+      if (isEventHandoff) {
+        const allowedRoutes = ['event-home', 'event-schedule', 'trip-itinerary', 'trip-booking', 'order-drink'];
+        const requestedRoute = String(req.query?.next || 'event-home');
+        const nextRoute = allowedRoutes.includes(requestedRoute) ? requestedRoute : 'event-home';
+        res.setHeader('Location', '/#' + nextRoute);
+        return res.status(303).end();
+      }
       return send(res, 200, { success: true });
     } catch (error) {
       console.error('Kathin session exchange:', error);
@@ -82,6 +91,40 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const action = String(req.query?.view || 'member');
+      if (action === 'trip') {
+        const [vans, profileRows, seatRows, ownRows] = await Promise.all([
+          lookup(base, key, 'kathin_trip_vans', 'active=eq.true&select=id,van_number,seat_count,active&order=van_number.asc'),
+          lookup(base, key, 'kathin_trip_member_details', 'member_id=eq.' + encodeURIComponent(actorId) + '&select=member_id,phone,passport_status,updated_at&limit=1'),
+          lookup(base, key, 'kathin_trip_bookings', 'event_key=eq.' + TRIP_EVENT + '&status=eq.booked&select=van_id,seat_number&order=van_id.asc,seat_number.asc'),
+          lookup(base, key, 'kathin_trip_bookings', 'event_key=eq.' + TRIP_EVENT + '&member_id=eq.' + encodeURIComponent(actorId) + '&status=eq.booked&select=id,van_id,seat_number,created_at&order=created_at.asc')
+        ]);
+        const activeVans = vans || [];
+        const vanById = new Map(activeVans.map(van => [String(van.id), van]));
+        const myBookings = (ownRows || []).map(booking => ({ ...booking, van_number: vanById.get(String(booking.van_id))?.van_number || null }));
+        let bookings = [];
+        if (admin) {
+          const bookingRows = await lookup(base, key, 'kathin_trip_bookings', 'event_key=eq.' + TRIP_EVENT + '&status=eq.booked&select=id,van_id,seat_number,member_id,created_at&order=van_id.asc,seat_number.asc');
+          const memberIds = [...new Set((bookingRows || []).map(booking => String(booking.member_id)).filter(Boolean))];
+          let detailRows = [], peopleRows = [];
+          if (memberIds.length) {
+            const filter = '(' + memberIds.join(',') + ')';
+            [detailRows, peopleRows] = await Promise.all([
+              lookup(base, key, 'kathin_trip_member_details', 'member_id=in.' + encodeURIComponent(filter) + '&select=member_id,phone,passport_status'),
+              lookup(base, key, 'members', 'id=in.' + encodeURIComponent(filter) + '&select=id,full_name,display_name')
+            ]);
+          }
+          const detailsById = new Map((detailRows || []).map(item => [String(item.member_id), item]));
+          const namesById = new Map((peopleRows || []).map(item => [String(item.id), item.full_name || item.display_name || 'สมาชิก']));
+          bookings = (bookingRows || []).map(booking => {
+            const detail = detailsById.get(String(booking.member_id)) || {};
+            return { ...booking, van_number: vanById.get(String(booking.van_id))?.van_number || null,
+              member_name: namesById.get(String(booking.member_id)) || 'สมาชิก',
+              phone: detail.phone || '', passport_status: detail.passport_status || '' };
+          });
+        }
+        return send(res, 200, { success: true, vans: activeVans, profile: profileRows?.[0] || null,
+          seats: seatRows || [], myBookings, admin, bookings });
+      }
       if (action === 'board' || action === 'public-board') {
         const publicBoard = action === 'public-board';
         if (!publicBoard && !canServe) return send(res, 403, { success: false, message: 'เฉพาะเจ้าหน้าที่งานกฐิน' });
@@ -192,6 +235,57 @@ export default async function handler(req, res) {
 
     const body = req.body || {};
     const action = String(body.action || '');
+    if (action === 'trip-profile-save') {
+      const phone = String(body.phone || '').trim().replace(/\\s+/g, ' ');
+      const passportStatus = String(body.passport_status || '');
+      if (!/^[+0-9() -]{8,20}$/.test(phone) || !['yes', 'no'].includes(passportStatus))
+        return send(res, 400, { success: false, message: 'กรุณากรอกเบอร์โทรศัพท์และเลือกสถานะ Passport ให้ถูกต้อง' });
+      const saved = await rest(base, key, 'kathin_trip_member_details', 'on_conflict=member_id', {
+        method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+        body: JSON.stringify({ member_id: actorId, phone, passport_status: passportStatus, updated_at: new Date().toISOString() })
+      });
+      return send(res, 200, { success: true, profile: Array.isArray(saved) ? saved[0] : saved });
+    }
+    if (action === 'trip-book') {
+      const vanId = String(body.vanId || '');
+      const seatNumber = Number(body.seatNumber);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(vanId) || !Number.isSafeInteger(seatNumber))
+        return send(res, 400, { success: false, message: 'ข้อมูลรถหรือเบาะไม่ถูกต้อง' });
+      const profileRows = await lookup(base, key, 'kathin_trip_member_details', 'member_id=eq.' + encodeURIComponent(actorId) + '&select=member_id&limit=1');
+      if (!profileRows?.length) return send(res, 400, { success: false, message: 'กรุณาบันทึกเบอร์โทรศัพท์และสถานะ Passport ก่อนจอง' });
+      const vans = await lookup(base, key, 'kathin_trip_vans', 'id=eq.' + encodeURIComponent(vanId) + '&active=eq.true&select=id,van_number,seat_count&limit=1');
+      const van = vans?.[0];
+      if (!van) return send(res, 404, { success: false, message: 'ไม่พบรถตู้หรือรถคันนี้ปิดรับจองแล้ว' });
+      if (seatNumber < 1 || seatNumber > Number(van.seat_count)) return send(res, 400, { success: false, message: 'หมายเลขเบาะไม่ถูกต้อง' });
+      const created = await rest(base, key, 'kathin_trip_bookings', '', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ event_key: TRIP_EVENT, member_id: actorId, van_id: van.id, seat_number: seatNumber, status: 'booked' })
+      });
+      const booking = Array.isArray(created) ? created[0] : created;
+      return send(res, 200, { success: true, booking: { ...booking, van_number: van.van_number } });
+    }
+    if (action === 'trip-cancel') {
+      const bookingId = String(body.bookingId || '');
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(bookingId))
+        return send(res, 400, { success: false, message: 'รายการจองไม่ถูกต้อง' });
+      const ownership = admin ? '' : '&member_id=eq.' + encodeURIComponent(actorId);
+      const changed = await rest(base, key, 'kathin_trip_bookings', 'id=eq.' + encodeURIComponent(bookingId) + '&event_key=eq.' + TRIP_EVENT + '&status=eq.booked' + ownership, {
+        method: 'PATCH', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ status: 'cancelled', cancelled_at: new Date().toISOString(), cancelled_by: actorId })
+      });
+      if (!changed?.length) return send(res, 404, { success: false, message: 'ไม่พบรายการจองที่ยังใช้งานได้ หรือไม่มีสิทธิ์ยกเลิกรายการนี้' });
+      return send(res, 200, { success: true, booking: changed[0] });
+    }
+    if (action === 'trip-add-van') {
+      if (!admin) return send(res, 403, { success: false, message: 'เฉพาะพระอาจารย์หรือ Admin เพิ่มรถตู้ได้' });
+      const latest = await lookup(base, key, 'kathin_trip_vans', 'select=van_number&order=van_number.desc&limit=1');
+      const vanNumber = Number(latest?.[0]?.van_number || 0) + 1;
+      const created = await rest(base, key, 'kathin_trip_vans', '', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ van_number: vanNumber, seat_count: 13, active: true, created_by: actorId })
+      });
+      return send(res, 200, { success: true, van: Array.isArray(created) ? created[0] : created });
+    }
     if (action === 'menu-image') {
       if (!admin) return send(res, 403, { success: false, message: 'เฉพาะ Admin จัดการรูปเมนูได้' });
       const raw = String(body.image || '');
@@ -328,7 +422,8 @@ export default async function handler(req, res) {
     return send(res, 400, { success: false, message: 'ไม่รู้จักคำสั่งนี้' });
   } catch (error) {
     const message = String(error?.message || 'ดำเนินการไม่สำเร็จ');
-    const status = /QUEUE_STATE_CONFLICT/.test(message) ? 409 : /QUEUE_NOT_FOUND/.test(message) ? 404 : /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /INVALID_MENU|INVALID_SERVICE_DAY|INVALID_PREPARATION/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
-    return send(res, status, { success: false, message: ({ BOBA_NOT_AVAILABLE: 'เมนูนี้ไม่รองรับการเพิ่มไข่มุก กรุณาเลือกใหม่', INVALID_BOBA_CHOICE: 'กรุณาระบุว่าต้องการไข่มุกหรือไม่', NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'ขณะนี้อยู่นอกช่วงวันที่เปิดรับออร์เดอร์', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้' })[message] || message });
+    const status = error.dbCode === '23505' ? 409 : /QUEUE_STATE_CONFLICT/.test(message) ? 409 : /QUEUE_NOT_FOUND|TRIP_VAN_NOT_FOUND|TRIP_BOOKING_NOT_FOUND/.test(message) ? 404 : /FORBIDDEN/.test(message) ? 403 : /NO_DRINK_RIGHT/.test(message) ? 409 : /TRIP_PROFILE_REQUIRED|TRIP_INVALID_SEAT/.test(message) ? 400 : /INVALID_MENU|INVALID_SERVICE_DAY|INVALID_PREPARATION/.test(message) ? 400 : /EVENT_CLOSED|EVENT_NOT_ACTIVE/.test(message) ? 409 : 500;
+    const publicMessage = error.dbCode === '23505' ? (message.includes('kathin_trip_vans_van_number_key') ? 'มีการเพิ่มรถตู้พร้อมกัน กรุณาลองใหม่อีกครั้ง' : 'เบาะนี้เพิ่งมีผู้จองแล้ว กรุณาเลือกเบาะอื่น') : ({ BOBA_NOT_AVAILABLE: 'เมนูนี้ไม่รองรับการเพิ่มไข่มุก กรุณาเลือกใหม่', INVALID_BOBA_CHOICE: 'กรุณาระบุว่าต้องการไข่มุกหรือไม่', NO_DRINK_RIGHT: 'สิทธิ์เครื่องดื่มไม่พอ กรุณาติดต่อโต๊ะเจ้าหน้าที่', EVENT_CLOSED: 'ปิดรับรายการเครื่องดื่มแล้ว', EVENT_NOT_ACTIVE: 'ขณะนี้อยู่นอกช่วงวันที่เปิดรับออร์เดอร์', FORBIDDEN: 'ไม่มีสิทธิ์ดำเนินการนี้', TRIP_PROFILE_REQUIRED: 'กรุณาบันทึกข้อมูลติดต่อก่อนจอง', TRIP_INVALID_SEAT: 'หมายเลขเบาะไม่ถูกต้อง', TRIP_VAN_NOT_FOUND: 'ไม่พบรถตู้', TRIP_BOOKING_NOT_FOUND: 'ไม่พบรายการจอง' })[message] || message;
+    return send(res, status, { success: false, message: publicMessage });
   }
 }
